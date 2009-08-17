@@ -54,8 +54,15 @@ class ActiveDocument::Base
     @databases ||= { :id => ActiveDocument::Database.new(:model_class => self, :unique => true) }
   end      
 
-  def self.open_databases
-    databases.values.each {|database| database.db}
+  def self.open_database
+    environment.open
+    databases[:id].open # Must be opened first for associate to work.
+    databases.values.each {|database| database.open}
+  end
+
+  def self.close_database
+    databases.values.each {|database| database.close}
+    environment.close
   end
 
   def self.database(field = :id)
@@ -67,7 +74,6 @@ class ActiveDocument::Base
 
   def self.find_by(field, *keys)
     opts = keys.last.kind_of?(Hash) ? keys.pop : {}
-    keys = keys.first if keys.size == 1 and keys.first.kind_of?(Range)
     database(field).find(keys, opts)
   end
   
@@ -133,10 +139,8 @@ class ActiveDocument::Base
 
   def save
     raise 'cannot save readonly document' if readonly?
-    self.class.open_databases
 
-    attributes[:updated_at] = Time.now if respond_to?(:updated_at)
-    
+    attributes[:updated_at] = Time.now if respond_to?(:updated_at)    
     if new_record?      
       attributes[:created_at] = Time.now if respond_to?(:created_at)
       @new_record = false

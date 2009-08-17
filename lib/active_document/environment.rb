@@ -1,11 +1,16 @@
 class ActiveDocument::Environment
   def initialize(path)
     @path = path
+    at_exit { close }
   end
 
-  attr_reader :path
+  attr_reader :path, :env
 
-  def env
+  def db
+    env.db
+  end
+
+  def open
     if @env.nil?
       @env = Bdb::Env.new(0)
       env_flags =  Bdb::DB_CREATE    | # Create the environment if it does not already exist.
@@ -14,13 +19,14 @@ class ActiveDocument::Environment
                    Bdb::DB_INIT_LOG  | # Initialize logging
                    Bdb::DB_INIT_MPOOL  # Initialize the in-memory cache.
       @env.open(path, env_flags, 0);
-      at_exit { env.close }
     end
-    @env
   end
 
-  def db
-    env.db
+  def close
+    if @env
+      @env.close
+      @env = nil
+    end
   end
 
   def transaction
