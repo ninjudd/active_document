@@ -4,6 +4,7 @@ module ActiveDocument
 end
 
 require 'bdb'
+require 'tuple'
 require 'active_support/inflector'
 require 'active_document/database'
 require 'active_document/environment'

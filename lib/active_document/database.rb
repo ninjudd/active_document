@@ -35,22 +35,25 @@ class ActiveDocument::Database
       if key.kind_of?(Range)
         # Fetch a range of keys.
         cursor = db.cursor(transaction, 0)
-        k,v = cursor.get(Marshal.dump(key.first), nil, Bdb::DB_SET_RANGE)
-        while k and key.include?(Marshal.load(k))
+        first = Tuple.dump(key.first)
+        last  = Tuple.dump(key.last)
+        k,v = cursor.get(first, nil, Bdb::DB_SET_RANGE)
+        while key.exclude_end? ? k < last : k <= last
           models << Marshal.load(v)
           break if opts[:limit] and models.size == opts[:limit]
           k, v = cursor.get(nil, nil, Bdb::DB_NEXT)
+          break unless k
         end
         cursor.close
       else
         if unique?
           # There can only be one item for each key.
-          data = db.get(transaction, Marshal.dump(key), nil, 0)
+          data = db.get(transaction, Tuple.dump(key), nil, 0)
           models << Marshal.load(data) if data
         else
           # Have to use a cursor because there may be multiple items with each key.
           cursor = db.cursor(transaction, 0)
-          k,v = cursor.get(Marshal.dump(key), nil, Bdb::DB_SET)
+          k,v = cursor.get(Tuple.dump(key), nil, Bdb::DB_SET)
           while k
             models << Marshal.load(v)
             break if opts[:limit] and models.size == opts[:limit]
@@ -66,7 +69,7 @@ class ActiveDocument::Database
   end
 
   def save(model)
-    id = Marshal.dump(model.id)
+    id = Tuple.dump(model.id)
     db.put(nil, id, Marshal.dump(model), 0)
   end
 
@@ -74,9 +77,6 @@ class ActiveDocument::Database
     if @db.nil?
       @db = environment.db
       @db.flags = Bdb::DB_DUPSORT unless unique?
-      @db.btree_compare = lambda do |db, key1, key2|
-        Marshal.load(key1) <=> Marshal.load(key2)
-      end
       @db.open(nil, name, nil, Bdb::Db::BTREE, Bdb::DB_CREATE | Bdb::DB_AUTO_COMMIT, 0)
       
       if primary_db
@@ -87,10 +87,10 @@ class ActiveDocument::Database
           index_key = model.send(field)
           if index_key.kind_of?(Array)
             # Index multiple keys. If the key is an array, you must wrap it with an outer array.
-            index_key.collect {|k| Marshal.dump(k)}
+            index_key.collect {|k| Tuple.dump(k)}
           elsif index_key
             # Index a single key.
-            Marshal.dump(index_key)
+            Tuple.dump(index_key)
           end
         end
         
