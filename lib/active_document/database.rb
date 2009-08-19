@@ -3,10 +3,11 @@ class ActiveDocument::Database
     @model_class = opts[:model_class]
     @field       = opts[:field]
     @unique      = opts[:unique]
+    @suffix      = opts[:suffix] || (@field ? "by_#{@field}" : nil)
     at_exit { close }
   end
 
-  attr_accessor :model_class, :field, :db
+  attr_accessor :model_class, :field, :db, :suffix
 
   def unique?
     @unique
@@ -21,7 +22,7 @@ class ActiveDocument::Database
   end
   
   def name
-    @name ||= field ? "#{model_class.database_name}_by_#{field}" : model_class.database_name
+    @name ||= [model_class.database_name, suffix].compact.join('_')
   end
 
   def transaction
@@ -69,8 +70,9 @@ class ActiveDocument::Database
   end
 
   def save(model)
-    id = Tuple.dump(model.id)
-    db.put(nil, id, Marshal.dump(model), 0)
+    id   = Tuple.dump(model.id)
+    data = Marshal.dump(model)
+    db.put(nil, id, data, 0)
   end
 
   def open

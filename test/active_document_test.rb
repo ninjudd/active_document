@@ -35,7 +35,7 @@ class ActiveDocumentTest < Test::Unit::TestCase
       end
     end
     
-    should 'find by key' do
+    should 'find_by_id' do
       f = Foo.new(:foo => 'BAR', :id => 1)
       f.save
       

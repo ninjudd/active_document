@@ -51,7 +51,7 @@ class ActiveDocument::Base
   end
   
   def self.databases
-    @databases ||= { :id => ActiveDocument::Database.new(:model_class => self, :unique => true) }
+    @databases ||= { :id  => ActiveDocument::Database.new(:model_class => self, :unique => true) }
   end      
 
   def self.open_database
@@ -76,9 +76,9 @@ class ActiveDocument::Base
     opts = keys.last.kind_of?(Hash) ? keys.pop : {}
     database(field).find(keys, opts)
   end
-  
-  def self.find(key)
-    doc = find_by(:id, key).first
+
+  def self.find(key, opts = {})
+    doc = database.find([key], opts).first
     raise ActiveDocument::DocumentNotFound, "Couldn't find #{name} with key #{key}" unless doc
     doc
   end
@@ -118,46 +118,54 @@ class ActiveDocument::Base
     writer(*attrs)
   end
     
-  def initialize(attributes = {}, new_record = true)
-    @attributes = attributes
-    @new_record = new_record
+  def initialize(attributes = {})
+    if attributes.kind_of?(String)
+      @attributes, @saved_attributes = Marshal.load(attributes)
+    else
+      @attributes = attributes
+    end
   end
 
-  attr_reader :attributes
+  attr_reader :saved_attributes
+
+  def attributes
+    @attributes ||= Marshal.load(Marshal.dump(saved_attributes))
+  end
 
   def ==(other)
+    return false if other.nil?
     attributes == other.attributes
   end
 
   def new_record?
-    @new_record
+    @saved_attributes.nil?
   end
 
-  def readonly?
-    false # not @new_record and not @writable
+  def changed?(field = nil)
+    return false unless @attributes and @saved_attributes
+
+    if field
+      attributes[field] != saved_attributes[field]
+    else
+      attributes != saved_attributes
+    end
   end
 
   def save
-    raise 'cannot save readonly document' if readonly?
-
-    attributes[:updated_at] = Time.now if respond_to?(:updated_at)    
-    if new_record?      
-      attributes[:created_at] = Time.now if respond_to?(:created_at)
-      @new_record = false
-    end
-
+    attributes[:updated_at] = Time.now if respond_to?(:updated_at)
+    attributes[:created_at] = Time.now if respond_to?(:created_at) and new_record?
+    @saved_attributes = attributes
+    @attributes       = nil
     self.class.database.save(self)
+
     true
   end
 
   def _dump(ignored)
-    data = [@attributes]
-    data << true if new_record?
-    Marshal.dump(data)
+    Marshal.dump([@attributes, @saved_attributes])
   end
 
-  def self._load(str)
-    attributes, new_record = Marshal.load(str)
-    new(attributes, new_record)
+  def self._load(data)
+    new(data)
   end
 end
