@@ -33,6 +33,12 @@ class ActiveDocument::Database
     models = block_given? ? BlockArray.new(block) : []
 
     keys.uniq.each do |key|
+      if opts[:partial] and not key.kind_of?(Range)
+        first = [*key]
+        last  = first + [true]
+        key = first..last
+      end
+
       if key.kind_of?(Range)
         # Fetch a range of keys.
         cursor = db.cursor(transaction, 0)
@@ -72,7 +78,7 @@ class ActiveDocument::Database
   def save(model)
     id   = Tuple.dump(model.id)
     data = Marshal.dump(model)
-    db.put(nil, id, data, 0)
+    db.put(transaction, id, data, 0)
   end
 
   def open

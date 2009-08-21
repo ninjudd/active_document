@@ -10,16 +10,24 @@ class Foo < ActiveDocument::Base
   index_by :bar, :unique => true
 end
 
+class Bar < ActiveDocument::Base
+  path BDB_PATH
+  accessor :foo, :bar
+
+  id [:foo, :bar]
+  index_by :bar
+end
+
 class ActiveDocumentTest < Test::Unit::TestCase
-  context 'with db open' do
+  context 'with foo db open' do
     setup do
       FileUtils.mkdir BDB_PATH
       Foo.open_database
     end
-    
+
     teardown do
       Foo.close_database
-      FileUtils.rmtree BDB_PATH      
+      FileUtils.rmtree BDB_PATH
     end
 
     should 'find in database after save' do
@@ -66,4 +74,30 @@ class ActiveDocumentTest < Test::Unit::TestCase
       assert_equal (1..4).to_a + (16..20).to_a, Foo.find_by_id(1..3, 4, 16..20).collect {|f| f.id}
     end
   end
+
+  context 'with bar db open' do
+    setup do
+      FileUtils.mkdir BDB_PATH
+      Bar.open_database
+    end
+
+    teardown do
+      Bar.close_database
+      FileUtils.rmtree BDB_PATH
+    end
+
+    should 'find_by_id and find by id fields' do
+      100.times do |i|
+        100.times do |j|
+          b = Bar.new(:foo => i, :bar => j)
+          b.save
+        end
+      end
+
+      assert_equal [5, 5], Bar.find_by_id([5, 5]).first.id
+      assert_equal (0..99).collect {|i| [42, i]}, Bar.find_by_foo(42).collect {|b| b.id}
+      assert_equal (0..99).collect {|i| [i, 52]}, Bar.find_by_bar(52).collect {|b| b.id}
+    end
+  end
+
 end

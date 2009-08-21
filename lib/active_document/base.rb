@@ -3,7 +3,7 @@ class ActiveDocument::Base
     if path
       @path = path
     else
-      @path || (base_class? ? DEFAULT_PATH : super)
+      @path || (base_class? ? ActiveDocument::DEFAULT_PATH : super)
     end
   end
 
@@ -13,7 +13,7 @@ class ActiveDocument::Base
       @database_name = database_name
     else
       return nil if self == ActiveDocument::Base
-      @database_name ||= base_class? ? name.underscore.pluralize : super
+      @database_name ||= base_class? ? name.underscore.gsub('/', '-').pluralize : super
     end
   end
   
@@ -49,7 +49,27 @@ class ActiveDocument::Base
     raise "index on #{field} already exists" if databases[field]
     databases[field] = ActiveDocument::Database.new(opts.merge(:field => field, :model_class => self))    
   end
-  
+
+  def self.id(field_or_fields)
+    if field_or_fields.kind_of?(Array)
+      define_method(:id) do
+        field_or_fields.collect {|field| self.send(field)}.flatten
+      end
+
+      (class << self; self; end).instance_eval do
+        define_method("find_by_#{field_or_fields.first}") do |*keys|
+          opts = keys.last.kind_of?(Hash) ? keys.pop : {}
+          opts[:partial] = true
+          database(:id).find(keys, opts)
+        end
+      end
+    else
+      define_method(:id) do
+        self.send(field_or_fields)
+      end
+    end
+  end
+
   def self.databases
     @databases ||= { :id  => ActiveDocument::Database.new(:model_class => self, :unique => true) }
   end      
@@ -77,9 +97,9 @@ class ActiveDocument::Base
     database(field).find(keys, opts)
   end
 
-  def self.find(key, opts = {})
-    doc = database.find([key], opts).first
-    raise ActiveDocument::DocumentNotFound, "Couldn't find #{name} with key #{key}" unless doc
+  def self.find(id, opts = {})
+    doc = database.find([id], opts).first
+    raise ActiveDocument::DocumentNotFound, "Couldn't find #{name} with id #{id.inspect}" unless doc
     doc
   end
 
