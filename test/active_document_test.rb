@@ -47,7 +47,7 @@ class ActiveDocumentTest < Test::Unit::TestCase
       f = Foo.new(:foo => 'BAR', :id => 1)
       f.save
       
-      assert_equal f, Foo.find_by_id(1).first
+      assert_equal f, Foo.find_by_id(1)
     end
     
     should 'find by secondary indexes' do
@@ -57,9 +57,9 @@ class ActiveDocumentTest < Test::Unit::TestCase
       f2 = Foo.new(:foo => 'BAR', :bar => 'FU', :id => 2)
       f2.save
       
-      assert_equal f1, Foo.find_by_bar('FOO').first
-      assert_equal f2, Foo.find_by_bar('FU').first
-      assert_equal [f1,f2], Foo.find_by_foo('BAR')
+      assert_equal f1,      Foo.find_by_bar('FOO')
+      assert_equal f2,      Foo.find_by_bar('FU')
+      assert_equal [f1,f2], Foo.find_all_by_foo('BAR')
     end
     
     should 'find by range' do
@@ -67,11 +67,30 @@ class ActiveDocumentTest < Test::Unit::TestCase
         Foo.new(:id => i, :foo => "foo-#{i}").save
       end
       
-      assert_equal (5..17).to_a, Foo.find_by_id(5..17).collect {|f| f.id}
-      assert_equal (5..14).to_a, Foo.find_by_id(5..17, :limit => 10).collect {|f| f.id}
+      assert_equal (5..17).to_a, Foo.find_all_by_id(5..17).collect {|f| f.id}
+      assert_equal (5..14).to_a, Foo.find_all_by_id(5..17, :limit => 10).collect {|f| f.id}
 
       # Mixed keys and ranges.
-      assert_equal (1..4).to_a + (16..20).to_a, Foo.find_by_id(1..3, 4, 16..20).collect {|f| f.id}
+      assert_equal (1..4).to_a + (16..20).to_a, Foo.find_all_by_id(1..3, 4, 16..20).collect {|f| f.id}
+    end
+
+    should 'find all' do
+      (1..20).each do |i|
+        Foo.new(:id => i, :foo => "foo-#{i}").save
+      end
+      
+      assert_equal (1..20).to_a, Foo.find_all_by_id.collect {|f| f.id}
+      assert_equal 1, Foo.find_by_id.id # First
+    end
+
+    should 'find with reverse' do
+      (1..20).each do |i|
+        Foo.new(:id => i, :foo => "foo-#{i}").save
+      end
+      
+      assert_equal (1..20).to_a.reverse, Foo.find_all_by_id(:reverse => true).collect {|f| f.id}
+      assert_equal (5..17).to_a.reverse, Foo.find_all_by_id(5..17, :reverse => true).collect {|f| f.id}
+      assert_equal 20, Foo.find_by_id(:reverse => true).id # Last
     end
   end
 
@@ -94,9 +113,9 @@ class ActiveDocumentTest < Test::Unit::TestCase
         end
       end
 
-      assert_equal [5, 5], Bar.find_by_id([5, 5]).first.id
-      assert_equal (0..99).collect {|i| [42, i]}, Bar.find_by_foo(42).collect {|b| b.id}
-      assert_equal (0..99).collect {|i| [i, 52]}, Bar.find_by_bar(52).collect {|b| b.id}
+      assert_equal [5, 5], Bar.find_by_id([5, 5]).id
+      assert_equal (0..99).collect {|i| [42, i]}, Bar.find_all_by_foo(42).collect {|b| b.id}
+      assert_equal (0..99).collect {|i| [i, 52]}, Bar.find_all_by_bar(52).collect {|b| b.id}
     end
   end
 

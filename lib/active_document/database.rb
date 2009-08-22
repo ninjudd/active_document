@@ -31,6 +31,7 @@ class ActiveDocument::Database
 
   def find(keys, opts = {}, &block)
     models = block_given? ? BlockArray.new(block) : []
+    flags  = opts[:modify] ? Bdb::DB_RMW : 0
 
     keys.uniq.each do |key|
       if opts[:partial] and not key.kind_of?(Range)
@@ -39,32 +40,64 @@ class ActiveDocument::Database
         key = first..last
       end
 
-      if key.kind_of?(Range)
+      if key == :all
+        cursor = db.cursor(transaction, 0)
+        if opts[:reverse]
+          k,v  = cursor.get(nil, nil, Bdb::DB_LAST | flags)          # Start at the last item.
+          iter = lambda {cursor.get(nil, nil, Bdb::DB_PREV | flags)} # Move backward.
+        else
+          k,v  = cursor.get(nil, nil, Bdb::DB_FIRST | flags)         # Start at the first item.
+          iter = lambda {cursor.get(nil, nil, Bdb::DB_NEXT | flags)} # Move forward.
+        end
+
+        while k
+          models << Marshal.load(v)
+          break if opts[:limit] and models.size == opts[:limit]
+          k,v = iter.call
+        end
+        cursor.close
+      elsif key.kind_of?(Range)
         # Fetch a range of keys.
         cursor = db.cursor(transaction, 0)
         first = Tuple.dump(key.first)
-        last  = Tuple.dump(key.last)
-        k,v = cursor.get(first, nil, Bdb::DB_SET_RANGE)
-        while key.exclude_end? ? k < last : k <= last
+        last  = Tuple.dump(key.last)        
+
+        # Return false once we pass the end of the range.
+        cond = key.exclude_end? ? lambda {|k| k < last} : lambda {|k| k <= last}
+
+        if opts[:reverse]
+          # Position the cursor at the end of the range.
+          k,v = cursor.get(last, nil, Bdb::DB_SET_RANGE | flags)
+          while k and not cond.call(k)
+            k,v = iter.call
+          end
+
+          iter = lambda {cursor.get(nil, nil, Bdb::DB_PREV | flags)} # Move backward.
+          cond = lambda {|k| k >= first} # Change the condition to stop when we move past the start.
+        else
+          k,v  = cursor.get(first, nil, Bdb::DB_SET_RANGE | flags)   # Start at the beginning of the range.
+          iter = lambda {cursor.get(nil, nil, Bdb::DB_NEXT | flags)} # Move forward.
+        end
+
+        while k and cond.call(k)
           models << Marshal.load(v)
           break if opts[:limit] and models.size == opts[:limit]
-          k, v = cursor.get(nil, nil, Bdb::DB_NEXT)
-          break unless k
+          k,v = iter.call
         end
         cursor.close
       else
         if unique?
           # There can only be one item for each key.
-          data = db.get(transaction, Tuple.dump(key), nil, 0)
+          data = db.get(transaction, Tuple.dump(key), nil, flags)
           models << Marshal.load(data) if data
         else
           # Have to use a cursor because there may be multiple items with each key.
           cursor = db.cursor(transaction, 0)
-          k,v = cursor.get(Tuple.dump(key), nil, Bdb::DB_SET)
+          k,v = cursor.get(Tuple.dump(key), nil, Bdb::DB_SET | flags)
           while k
             models << Marshal.load(v)
             break if opts[:limit] and models.size == opts[:limit]
-            k,v = cursor.get(nil, nil, Bdb::DB_NEXT_DUP)
+            k,v = cursor.get(nil, nil, Bdb::DB_NEXT_DUP | flags)
           end
           cursor.close
         end

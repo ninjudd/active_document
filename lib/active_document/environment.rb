@@ -36,7 +36,7 @@ class ActiveDocument::Environment
       parent = @transaction
       @transaction = env.txn_begin(nil, 0)
       begin
-        yield
+        value = yield
         @transaction.commit(0)
       rescue Exception => e
         @transaction.abort
@@ -44,6 +44,7 @@ class ActiveDocument::Environment
       ensure
         @transaction = parent
       end
+      value
     else
       @transaction
     end

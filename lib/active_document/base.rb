@@ -57,10 +57,14 @@ class ActiveDocument::Base
       end
 
       (class << self; self; end).instance_eval do
-        define_method("find_by_#{field_or_fields.first}") do |*keys|
-          opts = keys.last.kind_of?(Hash) ? keys.pop : {}
-          opts[:partial] = true
-          database(:id).find(keys, opts)
+        define_method("find_all_by_#{field_or_fields.first}") do |*keys|
+          opts = extract_opts(keys)
+          database(:id).find(keys, opts.merge(:partial => true))
+        end
+
+        define_method("find_by_#{field_or_fields.first}".intern) do |*keys|
+          opts = extract_opts(keys)
+          database(:id).find(keys, opts.merge(:partial => true, :limit => 1))
         end
       end
     else
@@ -93,7 +97,8 @@ class ActiveDocument::Base
   end
 
   def self.find_by(field, *keys)
-    opts = keys.last.kind_of?(Hash) ? keys.pop : {}
+    opts = extract_opts(keys)
+    keys << :all if keys.empty?
     database(field).find(keys, opts)
   end
 
@@ -105,7 +110,13 @@ class ActiveDocument::Base
 
   def self.method_missing(method_name, *args)
     method_name = method_name.to_s
-    if method_name =~ /^find_by_(\w+)$/
+    if method_name =~ /^find_by_(\w+)$/      
+      field = $1.to_sym
+      if databases[field]
+        merge_opts(args, :limit => 1)
+        return find_by(field, *args).first
+      end
+    elsif method_name =~ /^find_all_by_(\w+)$/
       field = $1.to_sym
       return find_by(field, *args) if databases[field]
     end
@@ -137,7 +148,15 @@ class ActiveDocument::Base
     reader(*attrs)
     writer(*attrs)
   end
-    
+  
+  def self.save_method(method_name)
+    define_method("#{method_name}!") do |*args|
+      value = send(method_name, *args)
+      save
+      value
+    end
+  end
+
   def initialize(attributes = {})
     if attributes.kind_of?(String)
       @attributes, @saved_attributes = Marshal.load(attributes)
@@ -187,5 +206,15 @@ class ActiveDocument::Base
 
   def self._load(data)
     new(data)
+  end
+
+private
+
+  def self.extract_opts(args)
+    args.last.kind_of?(Hash) ? args.pop : {}
+  end
+
+  def self.merge_opts(args, opts)
+    args << extract_opts(args).merge(opts)
   end
 end
