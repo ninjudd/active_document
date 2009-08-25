@@ -1,0 +1,43 @@
+= ActiveDocument
+
+ActiveDocument is a persistent Model store built on Berkeley DB. It was inspired by
+ActiveRecord, and in some cases, it can be used as a drop-in replacement. The performance
+of ActiveDocument can exceed a traditional ORM for many applications, because the database
+is stored locally and all lookups must use a predefined index. Also, attributes do not
+have to be cast after they are read from the database like in ActiveRecord. Instead, Ruby
+objects are stored directly in Berkeley DB and loaded using Marshal, which makes loading
+objects much faster. For more information on the diffences between Berkeley DB and a
+relational Database, see (http://www.oracle.com/database/docs/Berkeley-DB-v-Relational.pdf).
+
+== Usage:
+
+  require 'active_document'
+
+  class User < ActiveDocument::Base
+    path '/data/bdb'
+    accessor :first_name, :last_name, :username, :email_address
+
+    primary_key :username
+    index_by [:last_name, :first_name]
+    index_by :email_address, :unique => true
+  end
+
+  User.create(
+    :first_name => 'John',
+    :last_name  => 'Stewart',
+    :username   => 'lefty',
+    :email_address => 'john@thedailyshow.com'
+  )
+  
+  User.find('lefty').attributes
+  => {:first_name=>"John", :last_name=>"Stewart", :username=>"lefty", :email_address=>"john@thedailyshow.com"}
+
+== Install:
+
+  sudo gem install ninjudd-bdb -s http://gems.github.com
+  sudo gem install ninjudd-tuple -s http://gems.github.com
+  sudo gem install ninjudd-active_document -s http://gems.github.com
+
+== License:
+
+Copyright (c) 2009 Justin Balthrop, Geni.com; Published under The MIT License, see LICENSE
