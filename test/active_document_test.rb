@@ -6,6 +6,7 @@ class Foo < ActiveDocument::Base
   path BDB_PATH
   accessor :foo, :bar, :id
 
+  primary_key :id
   index_by :foo
   index_by :bar, :unique => true
 end
@@ -14,7 +15,7 @@ class Bar < ActiveDocument::Base
   path BDB_PATH
   accessor :foo, :bar
 
-  id [:foo, :bar]
+  primary_key [:foo, :bar]
   index_by :bar
 end
 
@@ -43,11 +44,46 @@ class ActiveDocumentTest < Test::Unit::TestCase
       end
     end
     
-    should 'find_by_id' do
+    should 'find_by_primary_key' do
+      f = Foo.new(:foo => 'BAR', :id => 1)
+      f.save
+      
+      assert_equal f, Foo.find_by_primary_key(1)
+      assert_equal f, Foo.find_by_id(1)
+    end
+
+    should 'destroy' do
       f = Foo.new(:foo => 'BAR', :id => 1)
       f.save
       
       assert_equal f, Foo.find_by_id(1)
+
+      f.destroy
+
+      assert_equal nil, Foo.find_by_id(1)
+    end
+
+    should 'change primary key' do
+      f = Foo.new(:foo => 'BAR', :id => 1)
+      f.save
+      
+      assert_equal f, Foo.find_by_id(1)
+
+      f.id = 2
+      f.save
+
+      assert_equal nil, Foo.find_by_id(1)
+      assert_equal 2,   Foo.find_by_id(2).id
+    end
+
+    should 'not overwrite existing model' do
+      b1 = Bar.new(:foo => 'foo', :bar => 'bar')
+      b1.save
+      
+      assert_raises(ActiveDocument::DuplicatePrimaryKey) do
+        b2 = Bar.new(:foo => 'foo', :bar => 'bar')
+        b2.save
+      end
     end
     
     should 'find by secondary indexes' do
@@ -105,7 +141,7 @@ class ActiveDocumentTest < Test::Unit::TestCase
       FileUtils.rmtree BDB_PATH
     end
 
-    should 'find_by_id and find by id fields' do
+    should 'find_by_primary_key and find by id fields' do
       100.times do |i|
         100.times do |j|
           b = Bar.new(:foo => i, :bar => j)
@@ -113,9 +149,10 @@ class ActiveDocumentTest < Test::Unit::TestCase
         end
       end
 
-      assert_equal [5, 5], Bar.find_by_id([5, 5]).id
-      assert_equal (0..99).collect {|i| [42, i]}, Bar.find_all_by_foo(42).collect {|b| b.id}
-      assert_equal (0..99).collect {|i| [i, 52]}, Bar.find_all_by_bar(52).collect {|b| b.id}
+      assert_equal [5, 5],   Bar.find_by_primary_key([5, 5]).primary_key
+      assert_equal [52, 52], Bar.find_by_foo_and_bar([52, 52]).foo_and_bar
+      assert_equal (0..99).collect {|i| [42, i]}, Bar.find_all_by_foo(42).collect {|b| b.primary_key}
+      assert_equal (0..99).collect {|i| [i, 52]}, Bar.find_all_by_bar(52).collect {|b| b.primary_key}
     end
   end
 

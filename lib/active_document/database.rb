@@ -4,7 +4,6 @@ class ActiveDocument::Database
     @field       = opts[:field]
     @unique      = opts[:unique]
     @suffix      = opts[:suffix] || (@field ? "by_#{@field}" : nil)
-    at_exit { close }
   end
 
   attr_accessor :model_class, :field, :db, :suffix
@@ -108,10 +107,18 @@ class ActiveDocument::Database
     block_given? ? nil : models
   end
 
-  def save(model)
-    id   = Tuple.dump(model.id)
-    data = Marshal.dump(model)
-    db.put(transaction, id, data, 0)
+  def save(model, opts = {})
+    key   = Tuple.dump(model.primary_key)
+    data  = Marshal.dump(model)
+    flags = opts[:create] ? Bdb::DB_NOOVERWRITE : 0
+    db.put(transaction, key, data, flags)
+  rescue Bdb::DbError => e
+    raise ActiveDocument::DuplicatePrimaryKey, "primary key #{model.primary_key.inspect} already exists"
+  end
+
+  def delete(model)
+    key = Tuple.dump(model.primary_key)
+    db.del(transaction, key, 0)
   end
 
   def open

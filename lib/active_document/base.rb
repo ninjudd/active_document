@@ -38,62 +38,74 @@ class ActiveDocument::Base
     environment.transaction(&block)
   end
 
+  def transaction(&block)
+    self.class.transaction(&block)
+  end
+
   def self.create(*args)
     model = new(*args)
     model.save
     model
   end
 
-  def self.index_by(field, opts = {})
-    field = field.to_sym
-    raise "index on #{field} already exists" if databases[field]
-    databases[field] = ActiveDocument::Database.new(opts.merge(:field => field, :model_class => self))    
+  def self.primary_key(field_or_fields)    
+    field = define_field_accessor(field_or_fields)
+    define_find_methods(field, :field => :primary_key) # find_by_field1_and_field2
+    
+    define_field_accessor(field_or_fields, :primary_key)
+    define_find_methods(:primary_key) # find_by_primary_key
+
+    # Define shortcuts for partial keys.
+    if field_or_fields.kind_of?(Array) and not respond_to?(field_or_fields.first)
+      define_find_methods(field_or_fields.first, :field => :primary_key, :partial => true) # find_by_field1
+    end
   end
 
-  def self.id(field_or_fields)
-    if field_or_fields.kind_of?(Array)
-      define_method(:id) do
-        field_or_fields.collect {|field| self.send(field)}.flatten
-      end
+  def self.index_by(field_or_fields, opts = {})
+    field = define_field_accessor(field_or_fields)
+    raise "index on #{field} already exists" if databases[field]
+    databases[field] = ActiveDocument::Database.new(opts.merge(:field => field, :model_class => self))    
+    define_find_methods(field) # find_by_field1_and_field2
 
-      (class << self; self; end).instance_eval do
-        define_method("find_all_by_#{field_or_fields.first}") do |*keys|
-          opts = extract_opts(keys)
-          database(:id).find(keys, opts.merge(:partial => true))
-        end
-
-        define_method("find_by_#{field_or_fields.first}".intern) do |*keys|
-          opts = extract_opts(keys)
-          database(:id).find(keys, opts.merge(:partial => true, :limit => 1))
-        end
-      end
-    else
-      define_method(:id) do
-        self.send(field_or_fields)
-      end
+    # Define shortcuts for partial keys.
+    if field_or_fields.kind_of?(Array) and not respond_to?(field_or_fields.first)
+      define_find_methods(field_or_fields.first, :field => field, :partial => true) # find_by_field1
     end
   end
 
   def self.databases
-    @databases ||= { :id  => ActiveDocument::Database.new(:model_class => self, :unique => true) }
+    @databases ||= { :primary_key => ActiveDocument::Database.new(:model_class => self, :unique => true) }
   end      
 
   def self.open_database
-    environment.open
-    databases[:id].open # Must be opened first for associate to work.
-    databases.values.each {|database| database.open}
+    unless @database_open
+      environment.open
+      databases[:primary_key].open # Must be opened first for associate to work.
+      databases.values.each {|database| database.open}
+      @database_open = true
+      at_exit { close_database }
+    end
   end
 
   def self.close_database
-    databases.values.each {|database| database.close}
-    environment.close
+    if @database_open
+      databases.values.each {|database| database.close}
+      environment.close
+      @database_open = false
+    end
   end
 
-  def self.database(field = :id)
+  def self.database(field = nil)
+    open_database # Make sure the database is open.
+    field ||= :primary_key
     field = field.to_sym
     database = databases[field]
     database ||= base_class.database(field) unless base_class?
     database
+  end
+
+  def database(field = nil)
+    self.class.database(field)
   end
 
   def self.find_by(field, *keys)
@@ -102,25 +114,42 @@ class ActiveDocument::Base
     database(field).find(keys, opts)
   end
 
-  def self.find(id, opts = {})
-    doc = database.find([id], opts).first
-    raise ActiveDocument::DocumentNotFound, "Couldn't find #{name} with id #{id.inspect}" unless doc
+  def self.find(key, opts = {})
+    doc = database.find([key], opts).first
+    raise ActiveDocument::DocumentNotFound, "Couldn't find #{name} with id #{key.inspect}" unless doc
     doc
   end
-
-  def self.method_missing(method_name, *args)
-    method_name = method_name.to_s
-    if method_name =~ /^find_by_(\w+)$/      
-      field = $1.to_sym
-      if databases[field]
-        merge_opts(args, :limit => 1)
-        return find_by(field, *args).first
+  
+  def self.define_field_accessor(field_or_fields, field = nil)    
+    if field_or_fields.kind_of?(Array)
+      field ||= field_or_fields.join('_and_').to_sym
+      define_method(field) do
+        field_or_fields.collect {|f| self.send(f)}.flatten
       end
-    elsif method_name =~ /^find_all_by_(\w+)$/
-      field = $1.to_sym
-      return find_by(field, *args) if databases[field]
+    elsif field
+      define_method(field) do
+        self.send(field_or_fields)
+      end
+    else
+      field = field_or_fields.to_sym
     end
-    raise NoMethodError, "undefined method `#{method_name}' for #{self}"
+    field
+  end
+
+  def self.define_find_methods(name, opts = {})
+    field = opts[:field] || name
+
+    (class << self; self; end).instance_eval do
+      define_method("find_by_#{name}") do |*args|
+        merge_opts(args, :limit => 1, :partial => opts[:partial])
+        find_by(field, *args).first
+      end
+
+      define_method("find_all_by_#{name}") do |*args|
+        merge_opts(args, :partial => opts[:partial])
+        find_by(field, *args)
+      end
+    end
   end
 
   def self.timestamps
@@ -138,7 +167,6 @@ class ActiveDocument::Base
   def self.writer(*attrs)
     attrs.each do |attr|
       define_method("#{attr}=") do |value|
-        raise 'cannot modify readonly document' if readonly?
         attributes[attr] = value
       end
     end
@@ -184,20 +212,37 @@ class ActiveDocument::Base
     return false unless @attributes and @saved_attributes
 
     if field
-      attributes[field] != saved_attributes[field]
+      send(field) != saved.send(field)
     else
       attributes != saved_attributes
     end
   end
 
+  def saved
+    raise 'no saved attributes for new record' if new_record?
+    @saved ||= self.class.new(saved_attributes)
+  end
+
   def save
     attributes[:updated_at] = Time.now if respond_to?(:updated_at)
     attributes[:created_at] = Time.now if respond_to?(:created_at) and new_record?
+
+    opts = {}
+    if changed?(:primary_key)
+      opts[:create] = true
+      saved.destroy
+    else
+      opts[:create] = new_record?
+    end
+
     @saved_attributes = attributes
     @attributes       = nil
-    self.class.database.save(self)
+    @saved            = nil
+    database.save(self, opts)
+  end
 
-    true
+  def destroy
+    database.delete(self)
   end
 
   def _dump(ignored)

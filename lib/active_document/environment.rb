@@ -1,7 +1,6 @@
 class ActiveDocument::Environment
   def initialize(path)
     @path = path
-    at_exit { close }
   end
 
   attr_reader :path, :env
