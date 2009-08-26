@@ -113,12 +113,21 @@ class ActiveDocument::Database
     flags = opts[:create] ? Bdb::DB_NOOVERWRITE : 0
     db.put(transaction, key, data, flags)
   rescue Bdb::DbError => e
-    raise ActiveDocument::DuplicatePrimaryKey, "primary key #{model.primary_key.inspect} already exists"
+    if e.message =~ /DB_KEYEXIST/
+      raise ActiveDocument::DuplicatePrimaryKey, "primary key #{model.primary_key.inspect} already exists"
+    else
+      raise e
+    end
   end
 
   def delete(model)
     key = Tuple.dump(model.primary_key)
     db.del(transaction, key, 0)
+  end
+
+  def truncate
+    # Delete all records in the database. Beware!
+    db.truncate(transaction)
   end
 
   def open

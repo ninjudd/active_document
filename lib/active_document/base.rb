@@ -3,7 +3,7 @@ class ActiveDocument::Base
     if path
       @path = path
     else
-      @path || (base_class? ? ActiveDocument::DEFAULT_PATH : super)
+      @path ||= (self == ActiveDocument::Base ? ActiveDocument::DEFAULT_PATH : ActiveDocument::Base.path)
     end
   end
 
@@ -12,20 +12,8 @@ class ActiveDocument::Base
       raise 'cannot modify database_name after db has been initialized' if @database_name
       @database_name = database_name
     else
-      return nil if self == ActiveDocument::Base
-      @database_name ||= base_class? ? name.underscore.gsub('/', '-').pluralize : super
-    end
-  end
-  
-  def self.base_class?
-    self == base_class
-  end
-
-  def self.base_class(klass = self)
-    if klass == ActiveDocument::Base or klass.superclass == ActiveDocument::Base
-      klass
-    else
-      base_class(klass.superclass)
+      return if self == ActiveDocument::Base 
+      @database_name ||= name.underscore.gsub('/', '-').pluralize
     end
   end
 
@@ -49,6 +37,8 @@ class ActiveDocument::Base
   end
 
   def self.primary_key(field_or_fields)    
+    databases[:primary_key] = ActiveDocument::Database.new(:model_class => self, :unique => true)
+
     field = define_field_accessor(field_or_fields)
     define_find_methods(field, :field => :primary_key) # find_by_field1_and_field2
     
@@ -74,7 +64,7 @@ class ActiveDocument::Base
   end
 
   def self.databases
-    @databases ||= { :primary_key => ActiveDocument::Database.new(:model_class => self, :unique => true) }
+    @databases ||= {}
   end      
 
   def self.open_database
@@ -99,9 +89,8 @@ class ActiveDocument::Base
     open_database # Make sure the database is open.
     field ||= :primary_key
     field = field.to_sym
-    database = databases[field]
-    database ||= base_class.database(field) unless base_class?
-    database
+    return if self == ActiveDocument::Base
+    databases[field] ||= super
   end
 
   def database(field = nil)
@@ -187,16 +176,30 @@ class ActiveDocument::Base
 
   def initialize(attributes = {})
     if attributes.kind_of?(String)
-      @attributes, @saved_attributes = Marshal.load(attributes)
+      @attributes, @saved_attributes = Marshal.load(attributes)      
     else
       @attributes = attributes
     end
+    @attributes       = HashWithIndifferentAccess.new(@attributes)       if @attributes
+    @saved_attributes = HashWithIndifferentAccess.new(@saved_attributes) if @saved_attributes
   end
 
   attr_reader :saved_attributes
 
   def attributes
     @attributes ||= Marshal.load(Marshal.dump(saved_attributes))
+  end
+
+  def to_json(*fields)
+    if fields.empty?
+      attributes.to_json
+    else
+      slice = {}
+      fields.each do |field|
+        slice[field] = attributes[field]
+      end
+      slice.to_json
+    end
   end
 
   def ==(other)
@@ -246,7 +249,9 @@ class ActiveDocument::Base
   end
 
   def _dump(ignored)
-    Marshal.dump([@attributes, @saved_attributes])
+    attributes       = @attributes.to_hash       if @attributes
+    saved_attributes = @saved_attributes.to_hash if @saved_attributes
+    Marshal.dump([attributes, saved_attributes])
   end
 
   def self._load(data)
