@@ -23,6 +23,7 @@ class ActiveDocument::Base
   end
 
   def self.transaction(&block)
+    open_database
     environment.transaction(&block)
   end
 

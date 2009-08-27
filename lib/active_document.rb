@@ -6,8 +6,7 @@ end
 
 require 'bdb'
 require 'tuple'
-require 'active_support/inflector'
-require 'active_support/core_ext/hash/indifferent_access.rb'
+require 'active_support'
 require 'active_document/database'
 require 'active_document/environment'
 require 'active_document/base'

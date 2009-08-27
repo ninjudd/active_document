@@ -36,7 +36,7 @@ class ActiveDocument::Database
       if opts[:partial] and not key.kind_of?(Range)
         first = [*key]
         last  = first + [true]
-        key = first..last
+        key   = first..last
       end
 
       if key == :all
@@ -65,13 +65,14 @@ class ActiveDocument::Database
         cond = key.exclude_end? ? lambda {|k| k < last} : lambda {|k| k <= last}
 
         if opts[:reverse]
+          iter = lambda {cursor.get(nil, nil, Bdb::DB_PREV | flags)} # Move backward.
+
           # Position the cursor at the end of the range.
-          k,v = cursor.get(last, nil, Bdb::DB_SET_RANGE | flags)
+          k,v = cursor.get(last, nil, Bdb::DB_SET_RANGE | flags) || cursor.get(nil, nil, Bdb::DB_LAST | flags)
           while k and not cond.call(k)
             k,v = iter.call
           end
 
-          iter = lambda {cursor.get(nil, nil, Bdb::DB_PREV | flags)} # Move backward.
           cond = lambda {|k| k >= first} # Change the condition to stop when we move past the start.
         else
           k,v  = cursor.get(first, nil, Bdb::DB_SET_RANGE | flags)   # Start at the beginning of the range.
