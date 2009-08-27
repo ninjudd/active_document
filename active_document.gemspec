@@ -1,10 +1,10 @@
 Gem::Specification.new do |s|
   s.name = %q{active_document}
-  s.version = "0.0.4"
+  s.version = "0.0.5"
 
   s.required_rubygems_version = Gem::Requirement.new(">= 0") if s.respond_to? :required_rubygems_version=
   s.authors = ["Justin Balthrop"]
-  s.date = %q{2009-08-25}
+  s.date = %q{2009-08-26}
   s.description = %q{TODO}
   s.email = %q{justin@geni.com}
   s.files = ["README.rdoc", "VERSION.yml", "lib/active_document", "lib/active_document/base.rb", "lib/active_document/database.rb", "lib/active_document/environment.rb", "lib/active_document.rb", "test/active_document_test.rb", "test/test_helper.rb"]
