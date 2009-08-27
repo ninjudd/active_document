@@ -1,21 +1,18 @@
 class ActiveDocument::Database
   def initialize(opts)
+    @environment = opts[:environment]
     @model_class = opts[:model_class]
     @field       = opts[:field]
     @unique      = opts[:unique]
     @suffix      = opts[:suffix] || (@field ? "by_#{@field}" : nil)
   end
 
-  attr_accessor :model_class, :field, :db, :suffix
+  attr_reader :environment, :model_class, :field, :db, :suffix
 
   def unique?
     @unique
   end
   
-  def environment
-    model_class.environment
-  end
-
   def primary_db
     model_class.database.db if field
   end

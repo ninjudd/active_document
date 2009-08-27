@@ -5,6 +5,11 @@ class ActiveDocument::Environment
 
   attr_reader :path, :env
 
+  def database(opts)
+    opts[:environment] = self
+    ActiveDocument::Database.new(opts)
+  end
+
   def db
     env.db
   end

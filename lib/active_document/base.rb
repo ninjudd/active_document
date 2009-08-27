@@ -37,8 +37,8 @@ class ActiveDocument::Base
     model
   end
 
-  def self.primary_key(field_or_fields)    
-    databases[:primary_key] = ActiveDocument::Database.new(:model_class => self, :unique => true)
+  def self.primary_key(field_or_fields)
+    databases[:primary_key] = environment.database(:model_class => self, :unique => true)
 
     field = define_field_accessor(field_or_fields)
     define_find_methods(field, :field => :primary_key) # find_by_field1_and_field2
@@ -55,7 +55,7 @@ class ActiveDocument::Base
   def self.index_by(field_or_fields, opts = {})
     field = define_field_accessor(field_or_fields)
     raise "index on #{field} already exists" if databases[field]
-    databases[field] = ActiveDocument::Database.new(opts.merge(:field => field, :model_class => self))    
+    databases[field] = environment.database(opts.merge(:field => field, :model_class => self))
     define_find_methods(field) # find_by_field1_and_field2
 
     # Define shortcuts for partial keys.
