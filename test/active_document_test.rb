@@ -7,7 +7,7 @@ class Foo < ActiveDocument::Base
   accessor :foo, :bar, :id
 
   primary_key :id
-  index_by :foo
+  index_by :foo, :multi_key => true
   index_by :bar, :unique => true
 end
 
@@ -17,6 +17,16 @@ class Bar < ActiveDocument::Base
 
   primary_key [:foo, :bar]
   index_by :bar
+end
+
+class User < ActiveDocument::Base
+  path BDB_PATH
+  accessor :first_name, :last_name, :username, :email_address, :tags
+
+  primary_key :username
+  index_by [:last_name, :first_name]
+  index_by :email_address, :unique => true
+  index_by :tags, :multi_key => true
 end
 
 class ActiveDocumentTest < Test::Unit::TestCase
@@ -87,7 +97,7 @@ class ActiveDocumentTest < Test::Unit::TestCase
     end
     
     should 'find by secondary indexes' do
-      f1 = Foo.new(:foo => 'BAR', :bar => 'FOO', :id => 1)
+      f1 = Foo.new(:foo => ['BAR', 'BAZ'], :bar => 'FOO', :id => 1)
       f1.save
       
       f2 = Foo.new(:foo => 'BAR', :bar => 'FU', :id => 2)
@@ -96,6 +106,7 @@ class ActiveDocumentTest < Test::Unit::TestCase
       assert_equal f1,      Foo.find_by_bar('FOO')
       assert_equal f2,      Foo.find_by_bar('FU')
       assert_equal [f1,f2], Foo.find_all_by_foo('BAR')
+      assert_equal [f1],    Foo.find_all_by_foo('BAZ')
     end
     
     should 'find by range' do
@@ -156,4 +167,55 @@ class ActiveDocumentTest < Test::Unit::TestCase
     end
   end
 
+  context 'with user db open' do
+    setup do
+      FileUtils.mkdir BDB_PATH
+      User.open_database
+
+      @john = User.create(
+        :first_name => 'John',
+        :last_name  => 'Stewart',
+        :username   => 'lefty',
+        :email_address => 'john@thedailyshow.com',
+        :tags => [:funny, :liberal]
+      )
+
+      @martha = User.create(
+        :first_name => 'Martha',
+        :last_name  => 'Stewart',
+        :username   => 'helen',
+        :email_address => 'martha@marthastewart.com',
+        :tags => [:conservative, :convict]
+      )
+
+      @martha = User.create(
+        :first_name => 'Stephen',
+        :last_name  => 'Colbert',
+        :username   => 'steve',
+        :email_address => 'stephen@thereport.com',
+        :tags => [:conservative, :funny]
+      )
+    end
+
+    teardown do
+      User.close_database
+      FileUtils.rmtree BDB_PATH
+    end
+    
+    should 'find_all_by_username' do
+      assert_equal ['helen', 'lefty', 'steve'], User.find_all_by_username.collect {|u| u.username}
+    end
+
+    should 'find_all_by_last_name_and_first_name' do
+      assert_equal ['steve', 'lefty', 'helen'], User.find_all_by_last_name_and_first_name.collect {|u| u.username}
+    end
+
+    should 'find_all_by_last_name' do
+      assert_equal ['John', 'Martha'], User.find_all_by_last_name('Stewart').collect {|u| u.first_name}
+    end
+
+    should 'find_all_by_tag' do
+      assert_equal ['lefty', 'steve'], User.find_all_by_tag(:funny).collect {|u| u.username}
+    end
+  end
 end

@@ -11,26 +11,54 @@ relational Database, see (http://www.oracle.com/database/docs/Berkeley-DB-v-Rela
 
 == Usage:
 
+  require 'rubygems'
   require 'active_document'
 
   class User < ActiveDocument::Base
     path '/data/bdb'
-    accessor :first_name, :last_name, :username, :email_address
+    accessor :first_name, :last_name, :username, :email_address, :tags
 
     primary_key :username
     index_by [:last_name, :first_name]
     index_by :email_address, :unique => true
+    index_by :tags, :multi_key => true
   end
 
   User.create(
     :first_name => 'John',
     :last_name  => 'Stewart',
     :username   => 'lefty',
-    :email_address => 'john@thedailyshow.com'
+    :email_address => 'john@thedailyshow.com',
+    :tags => [:funny, :liberal]
+  )
+
+  User.create(
+    :first_name => 'Martha',
+    :last_name  => 'Stewart',
+    :username   => 'helen',
+    :email_address => 'martha@marthastewart.com'
+    :tags => [:conservative, :convict]
+  )
+
+  User.create(
+    :first_name => 'Stephen',
+    :last_name  => 'Colbert',
+    :username   => 'steve',
+    :email_address => 'steve@thereport.com',
+    :tags => [:conservative, :funny]
   )
   
   User.find('lefty').attributes
-  => {:first_name=>"John", :last_name=>"Stewart", :username=>"lefty", :email_address=>"john@thedailyshow.com"}
+  => {"username"=>"lefty", "last_name"=>"Stewart", "email_address"=>"john@thedailyshow.com", "first_name"=>"John"}
+
+  User.find_by_email_address("john@thedailyshow.com").username
+  => "lefty"
+
+  User.find_all_by_last_name("Stewart").collect {|u| u.first_name}
+  => ["John", "Martha"]
+
+  User.find_all_by_tag(:funny).collect {|u| u.username}
+  => [
 
 == Install:
 

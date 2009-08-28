@@ -53,10 +53,14 @@ class ActiveDocument::Base
   end
 
   def self.index_by(field_or_fields, opts = {})
+    raise "cannot have a multi_key index on an aggregate key" if opts[:multi_key] and field_or_fields.kind_of?(Array)
+
     field = define_field_accessor(field_or_fields)
     raise "index on #{field} already exists" if databases[field]
     databases[field] = environment.database(opts.merge(:field => field, :model_class => self))
-    define_find_methods(field) # find_by_field1_and_field2
+
+    field_name = opts[:multi_key] ? field.to_s.singularize : field
+    define_find_methods(field_name, :field => field) # find_by_field1_and_field2
 
     # Define shortcuts for partial keys.
     if field_or_fields.kind_of?(Array) and not respond_to?(field_or_fields.first)
@@ -87,11 +91,11 @@ class ActiveDocument::Base
   end
 
   def self.database(field = nil)
+    return if self == ActiveDocument::Base
     open_database # Make sure the database is open.
     field ||= :primary_key
     field = field.to_sym
-    return if self == ActiveDocument::Base
-    databases[field] ||= super
+    databases[field] ||= superclass.database(field) || raise("database does not exist for field #{field}")
   end
 
   def database(field = nil)

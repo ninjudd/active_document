@@ -4,14 +4,14 @@ class ActiveDocument::Database
     @model_class = opts[:model_class]
     @field       = opts[:field]
     @unique      = opts[:unique]
+    @multi_key   = opts[:multi_key]
     @suffix      = opts[:suffix] || (@field ? "by_#{@field}" : nil)
   end
 
   attr_reader :environment, :model_class, :field, :db, :suffix
 
-  def unique?
-    @unique
-  end
+  define_method(:unique?)    { @unique    }
+  define_method(:multi_key?) { @multi_key }
   
   def primary_db
     model_class.database.db if field
@@ -60,7 +60,6 @@ class ActiveDocument::Database
 
         # Return false once we pass the end of the range.
         cond = key.exclude_end? ? lambda {|k| k < last} : lambda {|k| k <= last}
-
         if opts[:reverse]
           iter = lambda {cursor.get(nil, nil, Bdb::DB_PREV | flags)} # Move backward.
 
@@ -138,9 +137,9 @@ class ActiveDocument::Database
         index_callback = lambda do |db, key, data|
           model = Marshal.load(data)
           return unless model.kind_of?(model_class)
-          
+
           index_key = model.send(field)
-          if index_key.kind_of?(Array)
+          if multi_key? and index_key.kind_of?(Array)
             # Index multiple keys. If the key is an array, you must wrap it with an outer array.
             index_key.collect {|k| Tuple.dump(k)}
           elsif index_key
