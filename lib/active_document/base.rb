@@ -130,17 +130,22 @@ class ActiveDocument::Base
     field
   end
 
-  def self.define_find_methods(name, opts = {})
-    field = opts[:field] || name
+  def self.define_find_methods(name, config = {})
+    field = config[:field] || name
 
     (class << self; self; end).instance_eval do
       define_method("find_by_#{name}") do |*args|
-        merge_opts(args, :limit => 1, :partial => opts[:partial])
+        modify_opts(args) do |opts|
+          opts[:limit] = 1
+          opts[:partial] ||= config[:partial]
+        end
         find_by(field, *args).first
       end
 
       define_method("find_all_by_#{name}") do |*args|
-        merge_opts(args, :partial => opts[:partial])
+        modify_opts(args) do |opts|
+          opts[:partial] ||= config[:partial]
+        end
         find_by(field, *args)
       end
     end
@@ -269,7 +274,9 @@ private
     args.last.kind_of?(Hash) ? args.pop : {}
   end
 
-  def self.merge_opts(args, opts)
-    args << extract_opts(args).merge(opts)
+  def self.modify_opts(args)
+    opts = extract_opts(args)
+    yield(opts)
+    args << opts
   end
 end
