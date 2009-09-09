@@ -163,6 +163,18 @@ class ActiveDocument::Base
     end
   end
 
+  def self.bool_reader(*attrs)
+    attrs.each do |attr|
+      define_method(attr) do
+        !!attributes[attr]
+      end
+
+      define_method("#{attr}?") do
+        !!attributes[attr]
+      end
+    end
+  end
+
   def self.writer(*attrs)
     attrs.each do |attr|
       define_method("#{attr}=") do |value|
@@ -173,6 +185,11 @@ class ActiveDocument::Base
 
   def self.accessor(*attrs)
     reader(*attrs)
+    writer(*attrs)
+  end
+
+  def self.bool_accessor(*attrs)
+    bool_reader(*attrs)
     writer(*attrs)
   end
   
@@ -200,20 +217,19 @@ class ActiveDocument::Base
     @attributes ||= Marshal.load(Marshal.dump(saved_attributes))
   end
 
-  def to_json(*fields)
-    if fields.empty?
-      attributes.to_json
-    else
-      slice = {}
-      fields.each do |field|
-        slice[field] = attributes[field]
-      end
-      slice.to_json
+  save_method :update_attributes
+  def update_attributes(attrs = {})
+    attrs.each do |field, value|
+      self.send("#{field}=", value)
     end
   end
 
+  def to_json(*args)
+    attributes.to_json(*args)
+  end
+
   def ==(other)
-    return false if other.nil?
+    return false unless other.class == self.class
     attributes == other.attributes
   end
 
