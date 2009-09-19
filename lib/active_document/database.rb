@@ -37,50 +37,56 @@ class ActiveDocument::Database
       end
 
       if key == :all
-        cursor = db.cursor(transaction, 0)
-        if opts[:reverse]
-          k,v  = cursor.get(nil, nil, Bdb::DB_LAST | flags)          # Start at the last item.
-          iter = lambda {cursor.get(nil, nil, Bdb::DB_PREV | flags)} # Move backward.
-        else
-          k,v  = cursor.get(nil, nil, Bdb::DB_FIRST | flags)         # Start at the first item.
-          iter = lambda {cursor.get(nil, nil, Bdb::DB_NEXT | flags)} # Move forward.
-        end
-
-        while k
-          models << Marshal.load(v)
-          break if opts[:limit] and models.size == opts[:limit]
-          k,v = iter.call
-        end
-        cursor.close
-      elsif key.kind_of?(Range)
-        # Fetch a range of keys.
-        cursor = db.cursor(transaction, 0)
-        first = Tuple.dump(key.first)
-        last  = Tuple.dump(key.last)        
-
-        # Return false once we pass the end of the range.
-        cond = key.exclude_end? ? lambda {|k| k < last} : lambda {|k| k <= last}
-        if opts[:reverse]
-          iter = lambda {cursor.get(nil, nil, Bdb::DB_PREV | flags)} # Move backward.
-
-          # Position the cursor at the end of the range.
-          k,v = cursor.get(last, nil, Bdb::DB_SET_RANGE | flags) || cursor.get(nil, nil, Bdb::DB_LAST | flags)
-          while k and not cond.call(k)
-            k,v = iter.call
+        begin
+          cursor = db.cursor(transaction, 0)
+          if opts[:reverse]
+            k,v  = cursor.get(nil, nil, Bdb::DB_LAST | flags)          # Start at the last item.
+            iter = lambda {cursor.get(nil, nil, Bdb::DB_PREV | flags)} # Move backward.
+          else
+            k,v  = cursor.get(nil, nil, Bdb::DB_FIRST | flags)         # Start at the first item.
+            iter = lambda {cursor.get(nil, nil, Bdb::DB_NEXT | flags)} # Move forward.
           end
 
-          cond = lambda {|k| k >= first} # Change the condition to stop when we move past the start.
-        else
-          k,v  = cursor.get(first, nil, Bdb::DB_SET_RANGE | flags)   # Start at the beginning of the range.
-          iter = lambda {cursor.get(nil, nil, Bdb::DB_NEXT | flags)} # Move forward.
+          while k
+            models << Marshal.load(v)
+            break if opts[:limit] and models.size == opts[:limit]
+            k,v = iter.call
+          end
+        ensure
+          cursor.close
         end
-
-        while k and cond.call(k)
-          models << Marshal.load(v)
-          break if opts[:limit] and models.size == opts[:limit]
-          k,v = iter.call
+      elsif key.kind_of?(Range)
+        # Fetch a range of keys.
+        begin
+          cursor = db.cursor(transaction, 0)
+          first = Tuple.dump(key.first)
+          last  = Tuple.dump(key.last)        
+          
+          # Return false once we pass the end of the range.
+          cond = key.exclude_end? ? lambda {|k| k < last} : lambda {|k| k <= last}
+          if opts[:reverse]
+            iter = lambda {cursor.get(nil, nil, Bdb::DB_PREV | flags)} # Move backward.
+            
+            # Position the cursor at the end of the range.
+            k,v = cursor.get(last, nil, Bdb::DB_SET_RANGE | flags) || cursor.get(nil, nil, Bdb::DB_LAST | flags)
+            while k and not cond.call(k)
+              k,v = iter.call
+            end
+            
+            cond = lambda {|k| k >= first} # Change the condition to stop when we move past the start.
+          else
+            k,v  = cursor.get(first, nil, Bdb::DB_SET_RANGE | flags)   # Start at the beginning of the range.
+            iter = lambda {cursor.get(nil, nil, Bdb::DB_NEXT | flags)} # Move forward.
+          end
+          
+          while k and cond.call(k)
+            models << Marshal.load(v)
+            break if opts[:limit] and models.size == opts[:limit]
+            k,v = iter.call
+          end
+        ensure
+          cursor.close
         end
-        cursor.close
       else
         if unique?
           # There can only be one item for each key.
@@ -88,20 +94,27 @@ class ActiveDocument::Database
           models << Marshal.load(data) if data
         else
           # Have to use a cursor because there may be multiple items with each key.
-          cursor = db.cursor(transaction, 0)
-          k,v = cursor.get(Tuple.dump(key), nil, Bdb::DB_SET | flags)
-          while k
-            models << Marshal.load(v)
-            break if opts[:limit] and models.size == opts[:limit]
-            k,v = cursor.get(nil, nil, Bdb::DB_NEXT_DUP | flags)
+          begin
+            cursor = db.cursor(transaction, 0)
+            k,v = cursor.get(Tuple.dump(key), nil, Bdb::DB_SET | flags)
+            while k
+              models << Marshal.load(v)
+              break if opts[:limit] and models.size == opts[:limit]
+              k,v = cursor.get(nil, nil, Bdb::DB_NEXT_DUP | flags)
+            end
+          ensure
+            cursor.close
           end
-          cursor.close
         end
       end
       break if opts[:limit] and models.size == opts[:limit]
     end
 
     block_given? ? nil : models
+  rescue Bdb::DbError => e
+    e = wrap_error(e)
+    retry if transaction.nil? and e.kind_of?(ActiveDocument::Deadlock)
+    raise e
   end
 
   def save(model, opts = {})
@@ -110,27 +123,32 @@ class ActiveDocument::Database
     flags = opts[:create] ? Bdb::DB_NOOVERWRITE : 0
     db.put(transaction, key, data, flags)
   rescue Bdb::DbError => e
-    if e.message =~ /DB_KEYEXIST/
-      raise ActiveDocument::DuplicatePrimaryKey, "primary key #{model.primary_key.inspect} already exists"
-    else
-      raise e
-    end
+    e = wrap_error(e, model)
+    retry if transaction.nil? and e.kind_of?(ActiveDocument::Deadlock)
+    raise e
   end
 
   def delete(model)
     key = Tuple.dump(model.primary_key)
     db.del(transaction, key, 0)
+  rescue Bdb::DbError => e
+    e = wrap_error(e)
+    retry if transaction.nil? and e.kind_of?(ActiveDocument::Deadlock)
+    raise e
   end
 
   def truncate
     # Delete all records in the database. Beware!
     db.truncate(transaction)
+  rescue Bdb::DbError => e
+    raise wrap_error(e)
   end
 
-  def open
+  def open(opts = {})
     if @db.nil?
       @db = environment.db
       @db.flags = Bdb::DB_DUPSORT unless unique?
+      @db.pagesize = opts[:pagesize] if opts[:pagesize]
       @db.open(nil, name, nil, Bdb::Db::BTREE, Bdb::DB_CREATE | Bdb::DB_AUTO_COMMIT, 0)
       
       if primary_db
@@ -151,6 +169,8 @@ class ActiveDocument::Database
         primary_db.associate(nil, @db, 0, index_callback)
       end
     end
+  rescue Exception => e
+    raise wrap_error(e)
   end
 
   def close
@@ -158,6 +178,22 @@ class ActiveDocument::Database
       @db.close(0)
       @db = nil
     end
+  end
+
+private
+  
+  def wrap_error(e, model = nil)
+    error = case e.code
+    when Bdb::DB_RUNRECOVERY     : ActiveDocument::RunRecovery.new(e.message)
+    when Bdb::DB_LOCK_DEADLOCK   : ActiveDocument::Deadlock.new(e.message)
+    when Bdb::DB_LOCK_NOTGRANTED : ActiveDocument::Timeout.new(e.message)
+    when Bdb::DB_KEYEXIST
+      ActiveDocument::DuplicatePrimaryKey.new("primary key #{model.primary_key.inspect} already exists")
+    else
+      return e
+    end
+    error.set_backtrace(e.backtrace)
+    error
   end
 end
 

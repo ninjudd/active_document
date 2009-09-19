@@ -7,6 +7,14 @@ class ActiveDocument::Base
     end
   end
 
+  def self.db_config(config = nil)
+    if config
+      db_config.merge!(config)
+    else
+      @db_config ||= {}
+    end
+  end
+
   def self.database_name(database_name = nil)
     if database_name
       raise 'cannot modify database_name after db has been initialized' if @database_name
@@ -75,8 +83,8 @@ class ActiveDocument::Base
   def self.open_database
     unless @database_open
       environment.open
-      databases[:primary_key].open # Must be opened first for associate to work.
-      databases.values.each {|database| database.open}
+      databases[:primary_key].open(db_config) # Must be opened first for associate to work.
+      databases.values.each {|database| database.open(db_config)}
       @database_open = true
       at_exit { close_database }
     end
@@ -253,8 +261,9 @@ class ActiveDocument::Base
   end
 
   def save
-    attributes[:updated_at] = Time.now if respond_to?(:updated_at)
-    attributes[:created_at] = Time.now if respond_to?(:created_at) and new_record?
+    time = Time.now
+    attributes[:updated_at] = time if respond_to?(:updated_at)
+    attributes[:created_at] = time if respond_to?(:created_at) and new_record?
 
     opts = {}
     if changed?(:primary_key)

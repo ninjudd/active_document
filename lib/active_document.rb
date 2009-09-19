@@ -1,7 +1,10 @@
 module ActiveDocument
-  class ActiveDocumentError < StandardError; end
-  class DocumentNotFound < ActiveDocumentError; end
-  class DuplicatePrimaryKey < ActiveDocumentError; end
+  class Error               < StandardError; end
+  class DocumentNotFound    < Error;         end
+  class DuplicatePrimaryKey < Error;         end
+  class RunRecovery         < Error;         end
+  class Deadlock            < Error;         end
+  class Timeout             < Error;         end
 end
 
 require 'bdb'
