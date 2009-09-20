@@ -5,24 +5,28 @@ class ActiveDocument::Database
     @field       = opts[:field]
     @unique      = opts[:unique]
     @multi_key   = opts[:multi_key]
-    @suffix      = opts[:suffix] || (@field ? "by_#{@field}" : nil)
+    @name        = [@model_class.database_name, @field].compact.join('_by_')
   end
 
-  attr_reader :environment, :model_class, :field, :db, :suffix
+  attr_reader :environment, :model_class, :field, :db, :name
 
   define_method(:unique?)    { @unique    }
   define_method(:multi_key?) { @multi_key }
-  
-  def primary_db
-    model_class.database.db if field
+  define_method(:primary?)   { !field     }
+
+  def secondary_database(opts)
+    raise 'creating a secondary database only allowed on primary' unless primary?
+    returning environment.database(opts.merge(:model_class => model_class)) do |db|
+      secondary_databases << db
+    end
   end
   
-  def name
-    @name ||= [model_class.database_name, suffix].compact.join('_')
+  def secondary_databases
+    @secondary_databases ||= []
   end
 
-  def transaction
-    environment.transaction
+  def transaction(&block)
+    environment.transaction(&block)
   end
 
   def find(keys, opts = {}, &block)
@@ -144,43 +148,46 @@ class ActiveDocument::Database
     raise wrap_error(e)
   end
 
-  def open(opts = {})
-    if @db.nil?
-      @db = environment.db
-      @db.flags = Bdb::DB_DUPSORT unless unique?
-      @db.pagesize = opts[:pagesize] if opts[:pagesize]
-      @db.open(nil, name, nil, Bdb::Db::BTREE, Bdb::DB_CREATE | Bdb::DB_AUTO_COMMIT, 0)
+  def open(config)
+    return if @db
+    @db = environment.db
+    @db.flags = Bdb::DB_DUPSORT unless unique?
+    @db.pagesize = config[:page_size] if config[:page_size]
+    @db.open(nil, name, nil, Bdb::Db::BTREE, Bdb::DB_CREATE | Bdb::DB_AUTO_COMMIT, 0)
       
-      if primary_db
-        index_callback = lambda do |db, key, data|
-          model = Marshal.load(data)
-          return unless model.kind_of?(model_class)
-
-          index_key = model.send(field)
-          if multi_key? and index_key.kind_of?(Array)
-            # Index multiple keys. If the key is an array, you must wrap it with an outer array.
-            index_key.collect {|k| Tuple.dump(k)}
-          elsif index_key
-            # Index a single key.
-            Tuple.dump(index_key)
-          end
-        end
-        
-        primary_db.associate(nil, @db, 0, index_callback)
-      end
+    secondary_databases.each do |secondary|
+      secondary.open(config)
+      associate(secondary)
     end
   rescue Exception => e
     raise wrap_error(e)
   end
 
   def close
-    if @db
-      @db.close(0)
-      @db = nil
-    end
+    return unless @db
+    @db.close(0)
+    secondary_databases.each {|secondary| secondary.close}
+    @db = nil
   end
 
 private
+
+  def associate(secondary)
+    index_callback = lambda do |db, key, data|
+      model = Marshal.load(data)
+      return unless model.kind_of?(model_class)
+      
+      index_key = model.send(secondary.field)
+      if secondary.multi_key? and index_key.kind_of?(Array)
+        # Index multiple keys. If the key is an array, you must wrap it with an outer array.
+        index_key.collect {|k| Tuple.dump(k)}
+      elsif index_key
+        # Index a single key.
+        Tuple.dump(index_key)
+      end
+    end
+    db.associate(nil, secondary.db, Bdb::DB_CREATE, index_callback)
+  end
   
   def wrap_error(e, model = nil)
     error = case e.code

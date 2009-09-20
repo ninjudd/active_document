@@ -1,9 +1,8 @@
 require File.dirname(__FILE__) + '/test_helper'
 
-BDB_PATH = File.dirname(__FILE__) + '/tmp'
+ActiveDocument.default_path = File.dirname(__FILE__) + '/tmp'
 
 class Foo < ActiveDocument::Base
-  path BDB_PATH
   accessor :foo, :bar, :id
 
   primary_key :id
@@ -12,7 +11,6 @@ class Foo < ActiveDocument::Base
 end
 
 class Bar < ActiveDocument::Base
-  path BDB_PATH
   accessor :foo, :bar
 
   primary_key [:foo, :bar]
@@ -20,7 +18,6 @@ class Bar < ActiveDocument::Base
 end
 
 class User < ActiveDocument::Base
-  path BDB_PATH
   accessor :first_name, :last_name, :username, :email_address, :tags
 
   primary_key :username
@@ -32,13 +29,13 @@ end
 class ActiveDocumentTest < Test::Unit::TestCase
   context 'with foo db open' do
     setup do
-      FileUtils.mkdir BDB_PATH
+      FileUtils.mkdir Foo.path
       Foo.open_database
     end
 
     teardown do
       Foo.close_database
-      FileUtils.rmtree BDB_PATH
+      FileUtils.rmtree Foo.path
     end
 
     should 'find in database after save' do
@@ -84,16 +81,6 @@ class ActiveDocumentTest < Test::Unit::TestCase
 
       assert_equal nil, Foo.find_by_id(1)
       assert_equal 2,   Foo.find_by_id(2).id
-    end
-
-    should 'not overwrite existing model' do
-      b1 = Bar.new(:foo => 'foo', :bar => 'bar')
-      b1.save
-      
-      assert_raises(ActiveDocument::DuplicatePrimaryKey) do
-        b2 = Bar.new(:foo => 'foo', :bar => 'bar')
-        b2.save
-      end
     end
     
     should 'find by secondary indexes' do
@@ -143,13 +130,23 @@ class ActiveDocumentTest < Test::Unit::TestCase
 
   context 'with bar db open' do
     setup do
-      FileUtils.mkdir BDB_PATH
+      FileUtils.mkdir Bar.path
       Bar.open_database
     end
 
     teardown do
       Bar.close_database
-      FileUtils.rmtree BDB_PATH
+      FileUtils.rmtree Bar.path
+    end
+
+    should 'not overwrite existing model' do
+      b1 = Bar.new(:foo => 'foo', :bar => 'bar')
+      b1.save
+      
+      assert_raises(ActiveDocument::DuplicatePrimaryKey) do
+        b2 = Bar.new(:foo => 'foo', :bar => 'bar')
+        b2.save
+      end
     end
 
     should 'find_by_primary_key and find by id fields' do
@@ -169,7 +166,7 @@ class ActiveDocumentTest < Test::Unit::TestCase
 
   context 'with user db open' do
     setup do
-      FileUtils.mkdir BDB_PATH
+      FileUtils.mkdir User.path
       User.open_database
 
       @john = User.create(
@@ -199,7 +196,7 @@ class ActiveDocumentTest < Test::Unit::TestCase
 
     teardown do
       User.close_database
-      FileUtils.rmtree BDB_PATH
+      FileUtils.rmtree User.path
     end
     
     should 'find_all_by_username' do

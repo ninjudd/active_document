@@ -1,18 +1,13 @@
 class ActiveDocument::Base
-  def self.path(path = nil)
-    if path
-      @path = path
-    else
-      @path ||= (self == ActiveDocument::Base ? ActiveDocument::DEFAULT_PATH : ActiveDocument::Base.path)
-    end
+  def self.path(path = nil)    
+    @path = path if path
+    @path ||= (self == ActiveDocument::Base ? nil : ActiveDocument::Base.path)
   end
 
-  def self.db_config(config = nil)
-    if config
-      db_config.merge!(config)
-    else
-      @db_config ||= {}
-    end
+  def self.db_config(config = {})
+    @db_config ||= {}
+    @db_config.merge!(config)
+    ActiveDocument.db_config.merge(@db_config)
   end
 
   def self.database_name(database_name = nil)
@@ -65,7 +60,7 @@ class ActiveDocument::Base
 
     field = define_field_accessor(field_or_fields)
     raise "index on #{field} already exists" if databases[field]
-    databases[field] = environment.database(opts.merge(:field => field, :model_class => self))
+    databases[field] = databases[:primary_key].secondary_database(opts.merge(:field => field))
 
     field_name = opts[:multi_key] ? field.to_s.singularize : field
     define_find_methods(field_name, :field => field) # find_by_field1_and_field2
@@ -76,26 +71,14 @@ class ActiveDocument::Base
     end
   end
 
-  def self.databases
-    @databases ||= {}
-  end      
-
   def self.open_database
-    unless @database_open
-      environment.open
-      databases[:primary_key].open(db_config) # Must be opened first for associate to work.
-      databases.values.each {|database| database.open(db_config)}
-      @database_open = true
-      at_exit { close_database }
-    end
+    environment.open
+    databases[:primary_key].open(db_config)
+    @exit_handler ||= at_exit { close_database }
   end
 
   def self.close_database
-    if @database_open
-      databases.values.each {|database| database.close}
-      environment.close
-      @database_open = false
-    end
+    environment.close
   end
 
   def self.database(field = nil)
@@ -108,6 +91,10 @@ class ActiveDocument::Base
 
   def database(field = nil)
     self.class.database(field)
+  end
+
+  def self.databases
+    @databases ||= {}
   end
 
   def self.find_by(field, *keys)
