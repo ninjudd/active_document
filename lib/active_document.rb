@@ -8,7 +8,6 @@ module ActiveDocument
 
   def self.env_config(config = {})
     @env_config ||= {
-      :max_mutexes  => 5000,
       :max_locks    => 5000,
       :lock_timeout => 30 * 1000 * 1000,
       :txn_timeout  => 30 * 1000 * 1000,

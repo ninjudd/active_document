@@ -31,7 +31,6 @@ class ActiveDocument::Environment
     @env.cachesize = config[:cache_size] if config[:cache_size]
     @env.set_timeout(config[:txn_timeout],  Bdb::DB_SET_TXN_TIMEOUT)  if config[:txn_timeout]
     @env.set_timeout(config[:lock_timeout], Bdb::DB_SET_LOCK_TIMEOUT) if config[:lock_timeout]
-    @env.mutex_set_max(config[:max_mutexes])  if config[:max_mutexes]
     @env.set_lk_max_locks(config[:max_locks]) if config[:max_locks]
     @env.set_lk_detect(Bdb::DB_LOCK_RANDOM)
     @env.flags_on = Bdb::DB_TXN_WRITE_NOSYNC | Bdb::DB_TIME_NOTGRANTED
