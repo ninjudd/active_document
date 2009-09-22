@@ -6,6 +6,22 @@ module ActiveDocument
   class Deadlock            < Error;         end
   class Timeout             < Error;         end
 
+  def self.wrap_error(e, model = nil)
+    return e unless e.kind_of?(Bdb::DbError)
+
+    error = case e.code
+    when Bdb::DB_RUNRECOVERY     : ActiveDocument::RunRecovery.new(e.message)
+    when Bdb::DB_LOCK_DEADLOCK   : ActiveDocument::Deadlock.new(e.message)
+    when Bdb::DB_LOCK_NOTGRANTED : ActiveDocument::Timeout.new(e.message)
+    when Bdb::DB_KEYEXIST
+      ActiveDocument::DuplicatePrimaryKey.new("primary key #{model.primary_key.inspect} already exists")
+    else
+      ActiveDocument::Error.new(e.message)
+    end
+    error.set_backtrace(e.backtrace)
+    error
+  end
+
   def self.env_config(config = {})
     @env_config ||= {
       :max_locks    => 5000,

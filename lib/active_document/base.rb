@@ -73,7 +73,7 @@ class ActiveDocument::Base
 
   def self.open_database
     environment.open
-    databases[:primary_key].open(db_config)
+    databases[:primary_key].open
     @exit_handler ||= at_exit { close_database }
   end
 

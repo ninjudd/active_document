@@ -21,8 +21,8 @@ class DeadlockTest < Test::Unit::TestCase
     end
 
     N = 10000 # total number of records
-    R = 20    # number of readers
-    W = 20    # number of writers
+    R = 10    # number of readers
+    W = 10    # number of writers
     T = 20    # reads per transaction
     L = 100   # logging frequency
 
@@ -39,19 +39,63 @@ class DeadlockTest < Test::Unit::TestCase
         pids << Process.fork(&reader)
       end
 
-      # Just make sure that all processes finish with no errors.
-      pids.each do |pid| 
+      # Make sure that all processes finish with no errors.
+      pids.each do |pid|
         Process.wait(pid)
-        assert_equal 0, $?.exitstatus
+        assert_equal status, $?.exitstatus
       end
+    end
+
+    C = 10
+    should 'detect unclosed resources' do
+      threads = []
+
+      threads << Thread.new do
+        C.times do
+          sleep(10)
+
+          pid = fork do
+            Foo.open_database
+            cursor = Foo.database.db.cursor(nil, 0)
+            cursor.get(nil, nil, Bdb::DB_FIRST)
+            exit!(1)
+          end
+          puts "\n====simulating exit with unclosed resources ===="
+          Process.wait(pid)
+          assert_equal 1, $?.exitstatus
+        end
+      end
+
+      threads << Thread.new do
+        C.times do
+          pid = fork(&writer(1000))
+          Process.wait(pid)
+          assert [0,9].include?($?.exitstatus)
+        end
+      end
+
+      sleep(3)
+
+      threads << Thread.new do
+        C.times do
+          pid = fork(&reader(1000))
+          Process.wait(pid)
+          assert [0,9].include?($?.exitstatus)
+        end
+      end
+      
+      threads.each {|t| t.join}
     end
   end
 
-  def reader
+  def assert_complete(pids, status = 0)
+  end
+
+  def reader(n = N)
     lambda do
       Foo.open_database
       T.times do
-        random_ids.each_slice(T) do |ids|
+        (1...n).to_a.shuffle.each_slice(T) do |ids|
           Foo.transaction do
             ids.each {|id| Foo.find_by_id(id)}
           end
@@ -62,10 +106,10 @@ class DeadlockTest < Test::Unit::TestCase
     end
   end
 
-  def writer
+  def writer(n = N)
     lambda do
       Foo.open_database
-      random_ids.each_with_index do |id, i|
+      (1...n).to_a.shuffle.each_with_index do |id, i|
         Foo.transaction do
           begin
             Foo.create(:id => id, :bar => "bar" * 1000 + "anne #{rand}")
@@ -78,10 +122,6 @@ class DeadlockTest < Test::Unit::TestCase
       end
       Foo.close_database
     end
-  end
-
-  def random_ids
-    (1...N).to_a.shuffle
   end
 
   def log(action)

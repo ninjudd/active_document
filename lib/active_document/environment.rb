@@ -35,6 +35,8 @@ class ActiveDocument::Environment
     @env.set_lk_detect(Bdb::DB_LOCK_RANDOM)
     @env.flags_on = Bdb::DB_TXN_WRITE_NOSYNC | Bdb::DB_TIME_NOTGRANTED
     @env.open(path, env_flags, 0)
+  rescue Bdb::DbError => e
+    raise ActiveDocument.wrap_error(e)
   end
 
   def close
@@ -42,6 +44,8 @@ class ActiveDocument::Environment
     databases.each {|database| database.close}
     @env.close
     @env = nil
+  rescue Bdb::DbError => e
+    raise ActiveDocument.wrap_error(e)
   end
 
   def transaction
@@ -52,13 +56,16 @@ class ActiveDocument::Environment
       @transaction = env.txn_begin(nil, 0)
       value = yield
       @transaction.commit(0)
+      @transaction = nil
       value
-    rescue Exception => e
-      @transaction.abort
-      retry if parent.nil? and e.kind_of?(ActiveDocument::Deadlock)
-      raise e
     ensure
+      @transaction.abort if @transaction
       @transaction = parent
     end
+  rescue Bdb::DbError, ActiveDocument::Error => e
+    e = ActiveDocument.wrap_error(e)
+    exit!(9) if e.kind_of?(ActiveDocument::RunRecovery)
+    retry if parent.nil? and e.kind_of?(ActiveDocument::Deadlock)
+    raise e
   end
 end

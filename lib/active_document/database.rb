@@ -14,6 +14,10 @@ class ActiveDocument::Database
   define_method(:multi_key?) { @multi_key }
   define_method(:primary?)   { !field     }
 
+  def config
+    model_class.db_config
+  end
+
   def secondary_database(opts)
     raise 'creating a secondary database only allowed on primary' unless primary?
     returning environment.database(opts.merge(:model_class => model_class)) do |db|
@@ -116,7 +120,7 @@ class ActiveDocument::Database
 
     block_given? ? nil : models
   rescue Bdb::DbError => e
-    e = wrap_error(e)
+    e = ActiveDocument.wrap_error(e)
     retry if transaction.nil? and e.kind_of?(ActiveDocument::Deadlock)
     raise e
   end
@@ -127,7 +131,7 @@ class ActiveDocument::Database
     flags = opts[:create] ? Bdb::DB_NOOVERWRITE : 0
     db.put(transaction, key, data, flags)
   rescue Bdb::DbError => e
-    e = wrap_error(e, model)
+    e = ActiveDocument.wrap_error(e, model)
     retry if transaction.nil? and e.kind_of?(ActiveDocument::Deadlock)
     raise e
   end
@@ -136,7 +140,7 @@ class ActiveDocument::Database
     key = Tuple.dump(model.primary_key)
     db.del(transaction, key, 0)
   rescue Bdb::DbError => e
-    e = wrap_error(e)
+    e = ActiveDocument.wrap_error(e)
     retry if transaction.nil? and e.kind_of?(ActiveDocument::Deadlock)
     raise e
   end
@@ -145,10 +149,10 @@ class ActiveDocument::Database
     # Delete all records in the database. Beware!
     db.truncate(transaction)
   rescue Bdb::DbError => e
-    raise wrap_error(e)
+    raise ActiveDocument.wrap_error(e)
   end
 
-  def open(config)
+  def open
     return if @db
     @db = environment.db
     @db.flags = Bdb::DB_DUPSORT unless unique?
@@ -156,11 +160,11 @@ class ActiveDocument::Database
     @db.open(nil, name, nil, Bdb::Db::BTREE, Bdb::DB_CREATE | Bdb::DB_AUTO_COMMIT, 0)
       
     secondary_databases.each do |secondary|
-      secondary.open(config)
+      secondary.open
       associate(secondary)
     end
   rescue Exception => e
-    raise wrap_error(e)
+    raise ActiveDocument.wrap_error(e)
   end
 
   def close
@@ -168,6 +172,8 @@ class ActiveDocument::Database
     @db.close(0)
     secondary_databases.each {|secondary| secondary.close}
     @db = nil
+  rescue Bdb::DbError => e
+    raise ActiveDocument.wrap_error(e)
   end
 
 private
@@ -187,20 +193,6 @@ private
       end
     end
     db.associate(nil, secondary.db, Bdb::DB_CREATE, index_callback)
-  end
-  
-  def wrap_error(e, model = nil)
-    error = case e.code
-    when Bdb::DB_RUNRECOVERY     : ActiveDocument::RunRecovery.new(e.message)
-    when Bdb::DB_LOCK_DEADLOCK   : ActiveDocument::Deadlock.new(e.message)
-    when Bdb::DB_LOCK_NOTGRANTED : ActiveDocument::Timeout.new(e.message)
-    when Bdb::DB_KEYEXIST
-      ActiveDocument::DuplicatePrimaryKey.new("primary key #{model.primary_key.inspect} already exists")
-    else
-      return e
-    end
-    error.set_backtrace(e.backtrace)
-    error
   end
 end
 
