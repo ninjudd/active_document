@@ -209,3 +209,16 @@ class BlockArray
     @block.call(item)
   end
 end
+
+# Array comparison should try Tuple comparison first.
+class Array
+  cmp = instance_method(:<=>)
+
+  define_method(:<=>) do |other|
+    begin
+      Tuple.dump(self) <=> Tuple.dump(other)
+    rescue TypeError => e
+      cmp.bind(self).call(other)
+    end
+  end
+end
