@@ -50,9 +50,7 @@ class ActiveDocument::Base
     define_find_methods(:primary_key) # find_by_primary_key
 
     # Define shortcuts for partial keys.
-    if field_or_fields.kind_of?(Array) and not respond_to?(field_or_fields.first)
-      define_find_methods(field_or_fields.first, :field => :primary_key, :partial => true) # find_by_field1
-    end
+    define_partial_shortcuts(field_or_fields, :primary_key)
   end
 
   def self.index_by(field_or_fields, opts = {})
@@ -66,9 +64,7 @@ class ActiveDocument::Base
     define_find_methods(field_name, :field => field) # find_by_field1_and_field2
 
     # Define shortcuts for partial keys.
-    if field_or_fields.kind_of?(Array) and not respond_to?(field_or_fields.first)
-      define_find_methods(field_or_fields.first, :field => field, :partial => true) # find_by_field1
-    end
+    define_partial_shortcuts(field_or_fields, field)
   end
 
   def self.open_database
@@ -143,6 +139,16 @@ class ActiveDocument::Base
         end
         find_by(field, *args)
       end
+    end
+  end
+
+  def self.define_partial_shortcuts(fields, primary_field)
+    return unless fields.kind_of?(Array)
+
+    (fields.size - 1).times do |i|
+      name = fields[0..i].join('_and_')
+      next if respond_to?("find_by_#{name}")
+      define_find_methods(name, :field => primary_field, :partial => true)
     end
   end
 
