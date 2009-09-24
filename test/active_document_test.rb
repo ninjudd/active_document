@@ -1,6 +1,8 @@
 require File.dirname(__FILE__) + '/test_helper'
 
 ActiveDocument.default_path = File.dirname(__FILE__) + '/tmp'
+FileUtils.rmtree ActiveDocument.default_path
+FileUtils.mkdir  ActiveDocument.default_path
 
 class Foo < ActiveDocument::Base
   accessor :foo, :bar, :id
@@ -27,15 +29,9 @@ class User < ActiveDocument::Base
 end
 
 class ActiveDocumentTest < Test::Unit::TestCase
-  context 'with foo db open' do
+  context 'with empty foo db' do
     setup do
-      FileUtils.mkdir Foo.path
-      Foo.open_database
-    end
-
-    teardown do
-      Foo.close_database
-      FileUtils.rmtree Foo.path
+      Foo.database.truncate!
     end
 
     should 'find in database after save' do
@@ -128,15 +124,9 @@ class ActiveDocumentTest < Test::Unit::TestCase
     end
   end
 
-  context 'with bar db open' do
+  context 'with empty bar db' do
     setup do
-      FileUtils.mkdir Bar.path
-      Bar.open_database
-    end
-
-    teardown do
-      Bar.close_database
-      FileUtils.rmtree Bar.path
+      Bar.database.truncate!
     end
 
     should 'not overwrite existing model' do
@@ -164,10 +154,9 @@ class ActiveDocumentTest < Test::Unit::TestCase
     end
   end
 
-  context 'with user db open' do
+  context 'with empty user db' do
     setup do
-      FileUtils.mkdir User.path
-      User.open_database
+      User.database.truncate!
 
       @john = User.create(
         :first_name => 'John',
@@ -192,11 +181,6 @@ class ActiveDocumentTest < Test::Unit::TestCase
         :email_address => 'stephen@thereport.com',
         :tags => [:conservative, :funny]
       )
-    end
-
-    teardown do
-      User.close_database
-      FileUtils.rmtree User.path
     end
     
     should 'find_all_by_username' do

@@ -2,9 +2,9 @@ class ActiveDocument::Environment
   def initialize(path)
     @path = path
   end
-  attr_reader :path, :env
+  attr_reader :path
 
-  def database(opts)
+  def new_database(opts)
     opts[:environment] = self
     returning ActiveDocument::Database.new(opts) do |db|
       databases << db if db.primary?
@@ -15,26 +15,26 @@ class ActiveDocument::Environment
     @databases ||= []
   end
 
-  def db
-    env.db
-  end
-
   def config
     ActiveDocument.env_config
   end
 
-  def open
-    return if @env
-    @env = Bdb::Env.new(0)
-    env_flags = Bdb::DB_CREATE | Bdb::DB_INIT_TXN | Bdb::DB_INIT_LOCK | Bdb::DB_INIT_LOG |
-                Bdb::DB_REGISTER | Bdb::DB_RECOVER | Bdb::DB_INIT_MPOOL
-    @env.cachesize = config[:cache_size] if config[:cache_size]
-    @env.set_timeout(config[:txn_timeout],  Bdb::DB_SET_TXN_TIMEOUT)  if config[:txn_timeout]
-    @env.set_timeout(config[:lock_timeout], Bdb::DB_SET_LOCK_TIMEOUT) if config[:lock_timeout]
-    @env.set_lk_max_locks(config[:max_locks]) if config[:max_locks]
-    @env.set_lk_detect(Bdb::DB_LOCK_RANDOM)
-    @env.flags_on = Bdb::DB_TXN_WRITE_NOSYNC | Bdb::DB_TIME_NOTGRANTED
-    @env.open(path, env_flags, 0)
+  def env
+    if @env.nil?
+      @env = Bdb::Env.new(0)
+      env_flags = Bdb::DB_CREATE | Bdb::DB_INIT_TXN | Bdb::DB_INIT_LOCK | Bdb::DB_INIT_LOG |
+                  Bdb::DB_REGISTER | Bdb::DB_RECOVER | Bdb::DB_INIT_MPOOL
+      @env.cachesize = config[:cache_size] if config[:cache_size]
+      @env.set_timeout(config[:txn_timeout],  Bdb::DB_SET_TXN_TIMEOUT)  if config[:txn_timeout]
+      @env.set_timeout(config[:lock_timeout], Bdb::DB_SET_LOCK_TIMEOUT) if config[:lock_timeout]
+      @env.set_lk_max_locks(config[:max_locks]) if config[:max_locks]
+      @env.set_lk_detect(Bdb::DB_LOCK_RANDOM)
+      @env.flags_on = Bdb::DB_TXN_WRITE_NOSYNC | Bdb::DB_TIME_NOTGRANTED
+      @env.open(path, env_flags, 0)
+
+      @exit_handler ||= at_exit { close }
+    end
+    @env
   rescue Bdb::DbError => e
     raise ActiveDocument.wrap_error(e)
   end
@@ -68,4 +68,5 @@ class ActiveDocument::Environment
     retry if parent.nil? and e.kind_of?(ActiveDocument::Deadlock)
     raise e
   end
+
 end

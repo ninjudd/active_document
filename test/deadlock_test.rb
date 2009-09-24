@@ -11,13 +11,11 @@ class Foo < ActiveDocument::Base
 end
 
 class DeadlockTest < Test::Unit::TestCase
-  context 'with db path' do
+  context 'with empty and closed environment' do
     setup do
-      FileUtils.mkdir Foo.path
-    end
-
-    teardown do
       FileUtils.rmtree Foo.path
+      FileUtils.mkdir  Foo.path
+      Foo.close_environment
     end
 
     N = 10000 # total number of records
@@ -30,13 +28,13 @@ class DeadlockTest < Test::Unit::TestCase
       pids = []
 
       W.times do |n|
-        pids << Process.fork(&writer)
+        pids << fork(&writer)
       end
 
       sleep(1)
 
       R.times do
-        pids << Process.fork(&reader)
+        pids << fork(&reader)
       end
 
       # Make sure that all processes finish with no errors.
@@ -55,7 +53,6 @@ class DeadlockTest < Test::Unit::TestCase
           sleep(10)
 
           pid = fork do
-            Foo.open_database
             cursor = Foo.database.db.cursor(nil, 0)
             cursor.get(nil, nil, Bdb::DB_FIRST)
             exit!(1)
@@ -88,12 +85,8 @@ class DeadlockTest < Test::Unit::TestCase
     end
   end
 
-  def assert_complete(pids, status = 0)
-  end
-
   def reader(n = N)
     lambda do
-      Foo.open_database
       T.times do
         (1...n).to_a.shuffle.each_slice(T) do |ids|
           Foo.transaction do
@@ -102,13 +95,12 @@ class DeadlockTest < Test::Unit::TestCase
           log('r')
         end
       end
-      Foo.close_database
+      Foo.close_environment
     end
   end
 
   def writer(n = N)
     lambda do
-      Foo.open_database
       (1...n).to_a.shuffle.each_with_index do |id, i|
         Foo.transaction do
           begin
@@ -120,7 +112,7 @@ class DeadlockTest < Test::Unit::TestCase
         end
         log('w')
       end
-      Foo.close_database
+      Foo.close_environment
     end
   end
 

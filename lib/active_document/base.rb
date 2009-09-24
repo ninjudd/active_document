@@ -25,9 +25,16 @@ class ActiveDocument::Base
     @@environment[path] ||= ActiveDocument::Environment.new(path)
   end
 
+  def self.database
+    @database
+  end
+
+  def database
+    self.class.database
+  end
+
   def self.transaction(&block)
-    open_database
-    environment.transaction(&block)
+    database.transaction(&block)
   end
 
   def transaction(&block)
@@ -41,7 +48,7 @@ class ActiveDocument::Base
   end
 
   def self.primary_key(field_or_fields)
-    databases[:primary_key] = environment.database(:model_class => self, :unique => true)
+    @database = environment.new_database(:model_class => self, :unique => true)
 
     field = define_field_accessor(field_or_fields)
     define_find_methods(field, :field => :primary_key) # find_by_field1_and_field2
@@ -57,8 +64,7 @@ class ActiveDocument::Base
     raise "cannot have a multi_key index on an aggregate key" if opts[:multi_key] and field_or_fields.kind_of?(Array)
 
     field = define_field_accessor(field_or_fields)
-    raise "index on #{field} already exists" if databases[field]
-    databases[field] = databases[:primary_key].secondary_database(opts.merge(:field => field))
+    database.index_by(field, opts)
 
     field_name = opts[:multi_key] ? field.to_s.singularize : field
     define_find_methods(field_name, :field => field) # find_by_field1_and_field2
@@ -67,36 +73,20 @@ class ActiveDocument::Base
     define_partial_shortcuts(field_or_fields, field)
   end
 
-  def self.open_database
-    environment.open
-    databases[:primary_key].open
-    @exit_handler ||= at_exit { close_database }
+  def self.partition_on(field)
+    database.partition_on(field)
   end
 
-  def self.close_database
+  def self.close_environment
+    # Will close all databases in the environment.
     environment.close
-  end
-
-  def self.database(field = nil)
-    return if self == ActiveDocument::Base
-    open_database # Make sure the database is open.
-    field ||= :primary_key
-    field = field.to_sym
-    databases[field] ||= superclass.database(field) || raise("database does not exist for field #{field}")
-  end
-
-  def database(field = nil)
-    self.class.database(field)
-  end
-
-  def self.databases
-    @databases ||= {}
   end
 
   def self.find_by(field, *keys)
     opts = extract_opts(keys)
+    opts[:field] = field
     keys << :all if keys.empty?
-    database(field).find(keys, opts)
+    database.find(keys, opts)
   end
 
   def self.find(key, opts = {})
