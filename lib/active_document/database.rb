@@ -2,97 +2,65 @@ class ActiveDocument::Database
   def initialize(opts)
     @environment = opts[:environment]
     @model_class = opts[:model_class]
-    @field       = opts[:field]
-    @unique      = opts[:unique]
-    @multi_key   = opts[:multi_key]
-    @name        = [@model_class.database_name, @field].compact.join('_by_')
+    @name        = opts[:name] || @model_class.database_name
   end
-  attr_reader :environment, :model_class, :primary_database, :field, :name
-
-  define_method(:unique?)    { @unique                }
-  define_method(:multi_key?) { @multi_key             }
-  define_method(:primary?)   { @primary_database.nil? }
+  attr_reader :environment, :model_class, :name
 
   def config
     model_class.db_config
   end
   
-  def index
-    @index ||= {}
-  end
-
   def indexes
-    index.values
+    @indexes ||= {}
   end
 
   def index_by(field, opts = {})
-    raise 'creating an index only allowed on primary database' unless primary?
-    raise "index on #{field} already exists" if index[field]
-    index[field] = environment.new_database(opts.merge(:model_class => model_class, :field => field))
+    raise "index on #{field} already exists" if indexes[field]
+    opts[:name] ||= [name, field].join('_by_')
+    indexes[field] = opts
   end
 
-  def db
-    # Ensure that the primary database is open.
-    primary_database.db unless primary?
-
+  def db(index = nil)
     if @db.nil?
-      @db = environment.env.db
-      @db.flags = Bdb::DB_DUPSORT unless unique?
-      @db.pagesize = config[:page_size] if config[:page_size]
-      @db.open(nil, name, nil, Bdb::Db::BTREE, Bdb::DB_CREATE | Bdb::DB_AUTO_COMMIT, 0)
-      indexes.each do |index|
-        index.associate(self)
+      @db = {}
+      @db[:primary_key] = environment.open_db(config.merge(:unique => true, :name => name))
+      indexes.each do |field, opts|
+        index_callback = lambda do |db, key, data|
+          model = Marshal.load(data)
+          return unless model.kind_of?(model_class)
+          
+          index_key = model.send(field)
+          if opts[:multi_key] and index_key.kind_of?(Array)
+            # Index multiple keys. If the key is an array, you must wrap it with an outer array.
+            index_key.collect {|k| Tuple.dump(k)}
+          elsif index_key
+            # Index a single key.
+            Tuple.dump(index_key)
+          end
+        end
+        @db[field] = environment.open_db(config.merge(opts))
+        @db[:primary_key].associate(nil, @db[field], Bdb::DB_CREATE, index_callback)
       end
     end
-    @db
+    @db[index || :primary_key]
   rescue Exception => e
     raise ActiveDocument.wrap_error(e)
   end
 
-  def associate(primary)
-    @primary_database = primary
-
-    index_callback = lambda do |db, key, data|
-      model = Marshal.load(data)
-      return unless model.kind_of?(model_class)
-      
-      index_key = model.send(field)
-      if multi_key? and index_key.kind_of?(Array)
-        # Index multiple keys. If the key is an array, you must wrap it with an outer array.
-        index_key.collect {|k| Tuple.dump(k)}
-      elsif index_key
-        # Index a single key.
-        Tuple.dump(index_key)
-      end
-    end
-    primary.db.associate(nil, db, Bdb::DB_CREATE, index_callback)
-  end
-
   def close
     return unless @db
-    @db.close(0)
+    @db.each {|field, db| db.close(0)}
     @db = nil
-    indexes.each do |index|
-      index.close
-    end
   rescue Bdb::DbError => e
     raise ActiveDocument.wrap_error(e)
   end
 
   def transaction(&block)
-    if primary?
-      environment.transaction(&block)
-    else
-      raise 'cannot start a transaction on a secondary database' if block_given?
-      environment.transaction
-    end
+    environment.transaction(&block)
   end
 
   def find(keys, opts = {}, &block)
-    # Delegate find to a secondary index if necessary.
-    field = opts[:field]
-    return index[field].find(keys, opts, &block) if primary? and field and field != :primary_key
-
+    db     = db(opts[:field])
     models = block_given? ? BlockArray.new(block) : []
     flags  = opts[:modify] ? Bdb::DB_RMW : 0
 
@@ -104,7 +72,7 @@ class ActiveDocument::Database
       end
 
       if key == :all
-        with_cursor do |cursor|
+        with_cursor(db) do |cursor|
           if opts[:reverse]
             k,v  = cursor.get(nil, nil, Bdb::DB_LAST | flags)          # Start at the last item.
             iter = lambda {cursor.get(nil, nil, Bdb::DB_PREV | flags)} # Move backward.
@@ -121,7 +89,7 @@ class ActiveDocument::Database
         end
       elsif key.kind_of?(Range)
         # Fetch a range of keys.
-        with_cursor do |cursor|
+        with_cursor(db) do |cursor|
           first = Tuple.dump(key.first)
           last  = Tuple.dump(key.last)        
           
@@ -149,13 +117,13 @@ class ActiveDocument::Database
           end
         end
       else
-        if unique?
+        if (db.flags & Bdb::DB_DUPSORT) == 0
           # There can only be one item for each key.
           data = db.get(transaction, Tuple.dump(key), nil, flags)
           models << Marshal.load(data) if data
         else
           # Have to use a cursor because there may be multiple items with each key.
-          with_cursor do |cursor|
+          with_cursor(db) do |cursor|
             k,v = cursor.get(Tuple.dump(key), nil, Bdb::DB_SET | flags)
             while k
               models << Marshal.load(v)
@@ -176,7 +144,6 @@ class ActiveDocument::Database
   end
 
   def save(model, opts = {})
-    assert_primary!
     key   = Tuple.dump(model.primary_key)
     data  = Marshal.dump(model)
     flags = opts[:create] ? Bdb::DB_NOOVERWRITE : 0
@@ -188,7 +155,6 @@ class ActiveDocument::Database
   end
 
   def delete(model)
-    assert_primary!
     key = Tuple.dump(model.primary_key)
     db.del(transaction, key, 0)
   rescue Bdb::DbError => e
@@ -199,7 +165,6 @@ class ActiveDocument::Database
 
   # Deletes all records in the database. Beware!
   def truncate!
-    assert_primary!
     db.truncate(transaction)
   rescue Bdb::DbError => e
     raise ActiveDocument.wrap_error(e)
@@ -207,16 +172,13 @@ class ActiveDocument::Database
 
 private
   
-  def with_cursor
+  def with_cursor(db)
     cursor = db.cursor(transaction, 0)
     yield(cursor)
   ensure
     cursor.close if cursor
   end
 
-  def assert_primary!
-    raise 'cannot perform operation on secondary database' unless primary?
-  end
 end
 
 # This allows us to support a block in find without changing the syntax.

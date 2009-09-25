@@ -7,7 +7,7 @@ class ActiveDocument::Environment
   def new_database(opts)
     opts[:environment] = self
     returning ActiveDocument::Database.new(opts) do |db|
-      databases << db if db.primary?
+      databases << db
     end
   end
 
@@ -37,6 +37,14 @@ class ActiveDocument::Environment
     @env
   rescue Bdb::DbError => e
     raise ActiveDocument.wrap_error(e)
+  end
+
+  def open_db(opts = {})
+    db = env.db
+    db.flags = Bdb::DB_DUPSORT unless opts[:unique]
+    db.pagesize = opts[:page_size] if opts[:page_size]
+    db.open(nil, opts[:name], nil, Bdb::Db::BTREE, Bdb::DB_CREATE | Bdb::DB_AUTO_COMMIT, 0)
+    db
   end
 
   def close

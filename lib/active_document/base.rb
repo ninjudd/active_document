@@ -48,7 +48,7 @@ class ActiveDocument::Base
   end
 
   def self.primary_key(field_or_fields)
-    @database = environment.new_database(:model_class => self, :unique => true)
+    @database = environment.new_database(:model_class => self)
 
     field = define_field_accessor(field_or_fields)
     define_find_methods(field, :field => :primary_key) # find_by_field1_and_field2
