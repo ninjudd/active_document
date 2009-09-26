@@ -19,6 +19,13 @@ class Bar < ActiveDocument::Base
   index_by :bar
 end
 
+class Baz < ActiveDocument::Base
+  accessor :foo, :bar, :baz
+
+  primary_key [:foo, :bar], :partition_by => :baz
+  index_by :bar
+end
+
 class User < ActiveDocument::Base
   accessor :first_name, :last_name, :username, :email_address, :tags
 
@@ -151,6 +158,38 @@ class ActiveDocumentTest < Test::Unit::TestCase
       assert_equal [52, 52], Bar.find_by_foo_and_bar([52, 52]).foo_and_bar
       assert_equal (0..99).collect {|i| [42, i]}, Bar.find_all_by_foo(42).collect {|b| b.primary_key}
       assert_equal (0..99).collect {|i| [i, 52]}, Bar.find_all_by_bar(52).collect {|b| b.primary_key}
+    end
+  end
+
+  context 'with empty baz db' do
+    setup do
+      Baz.database.truncate!
+    end
+
+    should 'partition_by baz' do
+      b1 = Baz.new(:foo => 'foo', :bar => 'bar', :baz => 1)
+      b1.save
+
+      b2 = Baz.new(:foo => 'foo', :bar => 'bar', :baz => 2)
+      b2.save
+
+      assert_equal b1, Baz.find(['foo','bar'], :baz => 1)
+      assert_equal b2, Baz.find(['foo','bar'], :baz => 2)
+    end
+
+    should 'find and save with partition' do
+      10.times do |i|
+        Baz.with_baz(i) do
+          assert_equal nil, Baz.find_by_primary_key(['foo','bar'])
+
+          b = Baz.new(:foo => 'foo', :bar => 'bar')
+          b.save
+
+          assert_equal i, b.baz
+          assert_equal b, Baz.find(['foo','bar'])
+        end
+      end
+      assert_equal (0...10).collect {|i| i.to_s}, Baz.database.partitions
     end
   end
 

@@ -47,8 +47,21 @@ class ActiveDocument::Base
     model
   end
 
-  def self.primary_key(field_or_fields)
-    @database = environment.new_database(:model_class => self)
+  def self.primary_key(field_or_fields, opts = {})
+    raise 'primary key already defined' if @database
+
+    if @partition_by = opts[:partition_by]
+      @database = ActiveDocument::PartitionedDatabase.new(
+        :model_class  => self,
+        :environment  => environment,
+        :partition_by => @partition_by
+      )
+      (class << self; self; end).instance_eval do
+        alias_method "with_#{@partition_by}", :with_partition
+      end
+    else
+      @database = environment.new_database(:model_class => self)
+    end
 
     field = define_field_accessor(field_or_fields)
     define_find_methods(field, :field => :primary_key) # find_by_field1_and_field2
@@ -58,6 +71,22 @@ class ActiveDocument::Base
 
     # Define shortcuts for partial keys.
     define_partial_shortcuts(field_or_fields, :primary_key)
+  end
+
+  def self.with_partition(partition, &block)
+    database.with_partition(partition, &block)
+  end
+
+  def self.partition_by
+    @partition_by
+  end
+
+  def partition_by
+    self.class.partition_by
+  end
+
+  def partition
+    send(partition_by) if partition_by
   end
 
   def self.index_by(field_or_fields, opts = {})
@@ -71,10 +100,6 @@ class ActiveDocument::Base
 
     # Define shortcuts for partial keys.
     define_partial_shortcuts(field_or_fields, field)
-  end
-
-  def self.partition_on(field)
-    database.partition_on(field)
   end
 
   def self.close_environment
@@ -200,6 +225,11 @@ class ActiveDocument::Base
     end
     @attributes       = HashWithIndifferentAccess.new(@attributes)       if @attributes
     @saved_attributes = HashWithIndifferentAccess.new(@saved_attributes) if @saved_attributes
+
+    if partition_by and partition.nil?
+      set_method = "#{partition_by}="
+      self.send(set_method, database.partition) if respond_to?(set_method)
+    end
   end
 
   attr_reader :saved_attributes
@@ -249,7 +279,7 @@ class ActiveDocument::Base
     attributes[:created_at] = time if respond_to?(:created_at) and new_record?
 
     opts = {}
-    if changed?(:primary_key)
+    if changed?(:primary_key) or (partition_by and changed?(partition_by))
       opts[:create] = true
       saved.destroy
     else
