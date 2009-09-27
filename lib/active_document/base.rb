@@ -57,7 +57,9 @@ class ActiveDocument::Base
         :partition_by => @partition_by
       )
       (class << self; self; end).instance_eval do
-        alias_method "with_#{@partition_by}", :with_partition
+        alias_method opts[:partition_by].to_s.pluralize, :partitions
+        alias_method "with_#{opts[:partition_by]}", :with_partition
+        alias_method "with_each_#{opts[:partition_by]}", :with_each_partition
       end
     else
       @database = environment.new_database(:model_class => self)
@@ -73,8 +75,18 @@ class ActiveDocument::Base
     define_partial_shortcuts(field_or_fields, :primary_key)
   end
 
+  def self.partitions
+    database.partitions
+  end
+
   def self.with_partition(partition, &block)
     database.with_partition(partition, &block)
+  end
+
+  def self.with_each_partition(&block)
+    database.partitions.each do |partition|
+      database.with_partition(partition, &block)
+    end
   end
 
   def self.partition_by

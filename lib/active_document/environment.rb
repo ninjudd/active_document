@@ -39,14 +39,6 @@ class ActiveDocument::Environment
     raise ActiveDocument.wrap_error(e)
   end
 
-  def open_db(opts = {})
-    db = env.db
-    db.flags = Bdb::DB_DUPSORT unless opts[:unique]
-    db.pagesize = opts[:page_size] if opts[:page_size]
-    db.open(nil, opts[:name], nil, Bdb::Db::BTREE, Bdb::DB_CREATE | Bdb::DB_AUTO_COMMIT, 0)
-    db
-  end
-
   def close
     return unless @env
     databases.each {|database| database.close}
@@ -56,12 +48,12 @@ class ActiveDocument::Environment
     raise ActiveDocument.wrap_error(e)
   end
 
-  def transaction
+  def transaction(nested = true)
     return @transaction unless block_given?
 
     parent = @transaction
     begin
-      @transaction = env.txn_begin(nil, 0)
+      @transaction = env.txn_begin(nested ? parent : nil, 0)
       value = yield
       @transaction.commit(0)
       @transaction = nil
@@ -72,7 +64,6 @@ class ActiveDocument::Environment
     end
   rescue Bdb::DbError, ActiveDocument::Error => e
     e = ActiveDocument.wrap_error(e)
-    exit!(9) if e.kind_of?(ActiveDocument::RunRecovery)
     retry if parent.nil? and e.kind_of?(ActiveDocument::Deadlock)
     raise e
   end

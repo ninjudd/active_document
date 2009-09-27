@@ -6,6 +6,10 @@ class ActiveDocument::Database
   end
   attr_reader :environment, :model_class, :name
 
+  def env
+    environment.env
+  end
+
   def config
     model_class.db_config
   end
@@ -16,30 +20,37 @@ class ActiveDocument::Database
 
   def index_by(field, opts = {})
     raise "index on #{field} already exists" if indexes[field]
-    opts[:name] ||= [name, field].join('_by_')
     indexes[field] = opts
   end
 
   def db(index = nil)
     if @db.nil?
       @db = {}
-      @db[:primary_key] = environment.open_db(config.merge(:unique => true, :name => name))
-      indexes.each do |field, opts|
-        index_callback = lambda do |db, key, data|
-          model = Marshal.load(data)
-          return unless model.kind_of?(model_class)
-          
-          index_key = model.send(field)
-          if opts[:multi_key] and index_key.kind_of?(Array)
-            # Index multiple keys. If the key is an array, you must wrap it with an outer array.
-            index_key.collect {|k| Tuple.dump(k)}
-          elsif index_key
-            # Index a single key.
-            Tuple.dump(index_key)
+      transaction(false) do
+        db = env.db
+        db.pagesize = config[:page_size] if config[:page_size]
+        db.open(transaction, name, nil, Bdb::Db::BTREE, Bdb::DB_CREATE, 0)
+        @db[:primary_key] = db
+
+        indexes.each do |field, opts|
+          index_callback = lambda do |db, key, data|
+            model = Marshal.load(data)          
+            index_key = model.send(field)
+            if opts[:multi_key] and index_key.kind_of?(Array)
+              # Index multiple keys. If the key is an array, you must wrap it with an outer array.
+              index_key.collect {|k| Tuple.dump(k)}
+            elsif index_key
+              # Index a single key.
+              Tuple.dump(index_key)
+            end
           end
+          index_db = env.db
+          index_db.flags = Bdb::DB_DUPSORT unless opts[:unique]
+          index_db.pagesize = config[:page_size] if config[:page_size]
+          index_db.open(transaction, "#{name}_by_#{field}", nil, Bdb::Db::BTREE, Bdb::DB_CREATE, 0)
+          db.associate(transaction, index_db, Bdb::DB_CREATE, index_callback)
+          @db[field] = index_db
         end
-        @db[field] = environment.open_db(config.merge(opts))
-        @db[:primary_key].associate(nil, @db[field], Bdb::DB_CREATE, index_callback)
       end
     end
     @db[index || :primary_key]
@@ -55,8 +66,8 @@ class ActiveDocument::Database
     raise ActiveDocument.wrap_error(e)
   end
 
-  def transaction(&block)
-    environment.transaction(&block)
+  def transaction(nested = true, &block)
+    environment.transaction(nested, &block)
   end
 
   def find(keys, opts = {}, &block)

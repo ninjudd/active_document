@@ -18,11 +18,11 @@ class DeadlockTest < Test::Unit::TestCase
       Foo.close_environment
     end
 
-    N = 10000 # total number of records
-    R = 10    # number of readers
-    W = 10    # number of writers
-    T = 20    # reads per transaction
-    L = 100   # logging frequency
+    N = 5000 # total number of records
+    R = 10   # number of readers
+    W = 10   # number of writers
+    T = 20   # reads per transaction
+    L = 100  # logging frequency
 
     should 'detect deadlock' do
       pids = []

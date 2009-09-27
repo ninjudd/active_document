@@ -2,7 +2,6 @@ module ActiveDocument
   class Error               < StandardError; end
   class DocumentNotFound    < Error;         end
   class DuplicatePrimaryKey < Error;         end
-  class RunRecovery         < Error;         end
   class Deadlock            < Error;         end
   class Timeout             < Error;         end
 
@@ -10,7 +9,7 @@ module ActiveDocument
     return e unless e.kind_of?(Bdb::DbError)
 
     error = case e.code
-    when Bdb::DB_RUNRECOVERY     : ActiveDocument::RunRecovery.new(e.message)
+    when Bdb::DB_RUNRECOVERY     : exit!(9)
     when Bdb::DB_LOCK_DEADLOCK   : ActiveDocument::Deadlock.new(e.message)
     when Bdb::DB_LOCK_NOTGRANTED : ActiveDocument::Timeout.new(e.message)
     when Bdb::DB_KEYEXIST

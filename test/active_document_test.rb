@@ -189,7 +189,7 @@ class ActiveDocumentTest < Test::Unit::TestCase
           assert_equal b, Baz.find(['foo','bar'])
         end
       end
-      assert_equal (0...10).collect {|i| i.to_s}, Baz.database.partitions
+      assert_equal (0...10).collect {|i| i.to_s}, Baz.partitions
     end
   end
 
