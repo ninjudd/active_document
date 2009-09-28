@@ -1,4 +1,6 @@
 class ActiveDocument::PartitionedDatabase
+  SEPARATOR = '__'
+
   def initialize(opts)
     @environment  = opts[:environment]
     @model_class  = opts[:model_class]
@@ -26,7 +28,7 @@ class ActiveDocument::PartitionedDatabase
     databases[partition] ||= begin
       database = environment.new_database(
         :model_class => model_class,
-        :name        => [partition, base_name].join('-')
+        :name        => [partition, base_name].join(SEPARATOR)
       )
       indexes.each do |field, opts|
         database.index_by(field, opts)
@@ -36,8 +38,8 @@ class ActiveDocument::PartitionedDatabase
   end
 
   def partitions
-    Dir[environment.path + "/*-#{base_name}"].collect do |file|
-      File.basename(file).split('-').first
+    Dir[environment.path + "/*#{SEPARATOR}#{base_name}"].collect do |file|
+      File.basename(file).split(SEPARATOR).first
     end
   end
 
