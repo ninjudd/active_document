@@ -60,14 +60,20 @@ class ActiveDocument::Database
 
   def close
     return unless @db
-    @db.each {|field, db| db.close(0)}
-    @db = nil
+    synchronize do
+      @db.each {|field, db| db.close(0)}
+      @db = nil
+    end
   rescue Bdb::DbError => e
     raise ActiveDocument.wrap_error(e)
   end
 
   def transaction(nested = true, &block)
     environment.transaction(nested, &block)
+  end
+
+  def synchronize(&block)
+    environment.synchronize(&block)
   end
 
   def find(keys, opts = {}, &block)
@@ -129,9 +135,11 @@ class ActiveDocument::Database
         end
       else
         if (db.flags & Bdb::DB_DUPSORT) == 0
-          # There can only be one item for each key.
-          data = db.get(transaction, Tuple.dump(key), nil, flags)
-          models << Marshal.load(data) if data
+          synchronize do
+            # There can only be one item for each key.
+            data = db.get(transaction, Tuple.dump(key), nil, flags)
+            models << Marshal.load(data) if data
+          end
         else
           # Have to use a cursor because there may be multiple items with each key.
           with_cursor(db) do |cursor|
@@ -155,10 +163,12 @@ class ActiveDocument::Database
   end
 
   def save(model, opts = {})
-    key   = Tuple.dump(model.primary_key)
-    data  = Marshal.dump(model)
-    flags = opts[:create] ? Bdb::DB_NOOVERWRITE : 0
-    db.put(transaction, key, data, flags)
+    synchronize do
+      key   = Tuple.dump(model.primary_key)
+      data  = Marshal.dump(model)
+      flags = opts[:create] ? Bdb::DB_NOOVERWRITE : 0
+      db.put(transaction, key, data, flags)
+    end
   rescue Bdb::DbError => e
     e = ActiveDocument.wrap_error(e, model)
     retry if transaction.nil? and e.kind_of?(ActiveDocument::Deadlock)
@@ -166,8 +176,10 @@ class ActiveDocument::Database
   end
 
   def delete(model)
-    key = Tuple.dump(model.primary_key)
-    db.del(transaction, key, 0)
+    synchronize do
+      key = Tuple.dump(model.primary_key)
+      db.del(transaction, key, 0)
+    end
   rescue Bdb::DbError => e
     e = ActiveDocument.wrap_error(e)
     retry if transaction.nil? and e.kind_of?(ActiveDocument::Deadlock)
@@ -176,7 +188,9 @@ class ActiveDocument::Database
 
   # Deletes all records in the database. Beware!
   def truncate!
-    db.truncate(transaction)
+    synchronize do
+      db.truncate(transaction)
+    end
   rescue Bdb::DbError => e
     raise ActiveDocument.wrap_error(e)
   end
@@ -184,12 +198,15 @@ class ActiveDocument::Database
 private
   
   def with_cursor(db)
-    cursor = db.cursor(transaction, 0)
-    yield(cursor)
-  ensure
-    cursor.close if cursor
+    synchronize do
+      begin
+        cursor = db.cursor(transaction, 0)
+        yield(cursor)
+      ensure
+        cursor.close if cursor
+      end
+    end
   end
-
 end
 
 # This allows us to support a block in find without changing the syntax.
