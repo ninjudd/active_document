@@ -132,6 +132,19 @@ class ActiveDocument::Base
     doc
   end
   
+  class << self
+    attr_reader :page_key, :page_offset
+
+    def set_page_marker(key = nil, offset = nil)
+      @page_key    = key
+      @page_offset = offset
+    end
+
+    def page_marker
+      [page_key, page_offset]
+    end
+  end
+
   def self.define_field_accessor(field_or_fields, field = nil)    
     if field_or_fields.kind_of?(Array)
       field ||= field_or_fields.join('_and_').to_sym

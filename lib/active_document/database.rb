@@ -77,11 +77,17 @@ class ActiveDocument::Database
   end
 
   def find(keys, opts = {}, &block)
+    if opts[:page].is_a?(Array)
+      raise 'page markers not supported with multiple keys' if keys.size != 1
+      page_key, opts[:offset] = opts.delete(:page)
+      page_key = Tuple.dump(page_key)
+    end
+
     db     = db(opts[:field])
-    models = block_given? ? BlockArray.new(block) : []
+    models = ResultSet.new(opts, &block)
     flags  = opts[:modify] ? Bdb::DB_RMW : 0
 
-    keys.uniq.each do |key|
+    keys.each do |key|
       if opts[:partial] and not key.kind_of?(Range)
         first = [*key]
         last  = first + [true]
@@ -89,27 +95,29 @@ class ActiveDocument::Database
       end
 
       if key == :all
-        with_cursor(db) do |cursor|
+        with_cursor(db) do |cursor|          
+          # Go directly to the page marker if there is a page_key.
+          page_marker = cursor.get(page_key, nil, Bdb::DB_SET | flags) if page_key
+
           if opts[:reverse]
-            k,v  = cursor.get(nil, nil, Bdb::DB_LAST | flags)          # Start at the last item.
-            iter = lambda {cursor.get(nil, nil, Bdb::DB_PREV | flags)} # Move backward.
+            k,v  = page_marker || cursor.get(nil, nil, Bdb::DB_LAST | flags) # Start at the last item.
+            iter = lambda {cursor.get(nil, nil, Bdb::DB_PREV | flags)}       # Move backward.
           else
-            k,v  = cursor.get(nil, nil, Bdb::DB_FIRST | flags)         # Start at the first item.
-            iter = lambda {cursor.get(nil, nil, Bdb::DB_NEXT | flags)} # Move forward.
+            k,v  = page_marker || cursor.get(nil, nil, Bdb::DB_FIRST | flags) # Start at the first item.
+            iter = lambda {cursor.get(nil, nil, Bdb::DB_NEXT | flags)}        # Move forward.
           end
 
           while k
             models << Marshal.load(v)
-            break if opts[:limit] and models.size == opts[:limit]
             k,v = iter.call
           end
         end
       elsif key.kind_of?(Range)
         # Fetch a range of keys.
         with_cursor(db) do |cursor|
-          first = Tuple.dump(key.first)
-          last  = Tuple.dump(key.last)        
-          
+          first = page_key || Tuple.dump(key.first)
+          last  = Tuple.dump(key.last)
+
           # Return false once we pass the end of the range.
           cond = key.exclude_end? ? lambda {|k| k < last} : lambda {|k| k <= last}
           if opts[:reverse]
@@ -129,7 +137,6 @@ class ActiveDocument::Database
           
           while k and cond.call(k)
             models << Marshal.load(v)
-            break if opts[:limit] and models.size == opts[:limit]
             k,v = iter.call
           end
         end
@@ -146,16 +153,17 @@ class ActiveDocument::Database
             k,v = cursor.get(Tuple.dump(key), nil, Bdb::DB_SET | flags)
             while k
               models << Marshal.load(v)
-              break if opts[:limit] and models.size == opts[:limit]
               k,v = cursor.get(nil, nil, Bdb::DB_NEXT_DUP | flags)
             end
           end
         end
       end
-      break if opts[:limit] and models.size == opts[:limit]
     end
-
-    block_given? ? nil : models
+    model_class.set_page_marker
+    models.to_a
+  rescue ResultSet::LimitReached
+    model_class.set_page_marker(models.page_key, models.page_offset)
+    models.to_a
   rescue Bdb::DbError => e
     e = ActiveDocument.wrap_error(e)
     retry if transaction.nil? and e.kind_of?(ActiveDocument::Deadlock)
@@ -207,19 +215,42 @@ private
       end
     end
   end
-end
 
-# This allows us to support a block in find without changing the syntax.
-class BlockArray
-  def initialize(block)
-    @block = block
-    @size  = 0
-  end
-  attr_reader :size
-  
-  def <<(item)
-    @size += 1
-    @block.call(item)
+  class ResultSet
+    class LimitReached < Exception; end
+
+    def initialize(opts, &block)
+      @block  = block
+      @field  = opts[:field] || :primary_key
+      @models = []
+      @count  = 0
+      @limit  = opts[:limit] || opts[:per_page]
+      @offset = opts[:offset] || (opts[:page] ? @limit * (opts[:page] - 1) : 0)
+      @page_offset = 0
+    end
+    attr_reader :count, :limit, :offset, :page_key, :page_offset, :field
+
+    def to_a
+      @models.dup
+    end
+
+    def <<(model)
+      @count += 1
+      return if count <= offset
+
+      if limit
+        key = model.send(field)
+        if key == page_key
+          @page_offset += 1
+        else
+          @page_key = key
+          @page_offset = 0
+        end
+        raise LimitReached if count > limit + offset
+      end
+
+      @block ? @block.call(model) : @models << model
+    end
   end
 end
 

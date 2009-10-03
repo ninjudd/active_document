@@ -129,6 +129,32 @@ class ActiveDocumentTest < Test::Unit::TestCase
       assert_equal (5..17).to_a.reverse, Foo.find_all_by_id(5..17, :reverse => true).collect {|f| f.id}
       assert_equal 20, Foo.find_by_id(:reverse => true).id # Last
     end
+
+    should 'find with limit and offset' do
+      (1..100).each do |i|
+        Foo.new(:id => i, :bar => i + 42, :foo => i % 20).save
+      end
+
+      assert_equal [5, 5, 5, 5, 6, 6, 6],
+        Foo.find_all_by_foo(5..14, :limit => 7, :offset => 1).collect {|f| f.foo}
+      assert_equal 6, Foo.page_key
+      assert_equal 3, Foo.page_offset
+
+      assert_equal [6, 6, 7, 7, 7, 7, 7, 8, 8, 8, 8],
+        Foo.find_all_by_foo(Foo.page_key..14, :limit => 11, :offset => Foo.page_offset).collect {|f| f.foo}
+      assert_equal 8, Foo.page_key
+      assert_equal 4, Foo.page_offset
+
+      assert_equal [8, 9, 9, 9, 9, 9, 10, 10, 10, 10, 10, 11, 11, 11, 11, 11],
+        Foo.find_all_by_foo(Foo.page_key..14, :limit => 16, :offset => Foo.page_offset).collect {|f| f.foo}
+      assert_equal 12, Foo.page_key
+      assert_equal 0,  Foo.page_offset
+
+      assert_equal [12, 12, 12, 12, 12, 13, 13, 13, 13, 13, 14, 14, 14, 14, 14],
+        Foo.find_all_by_foo(Foo.page_key..14, :offset => Foo.page_offset).collect {|f| f.foo}
+      assert_equal nil, Foo.page_key
+      assert_equal nil, Foo.page_offset
+    end
   end
 
   context 'with empty bar db' do
@@ -220,14 +246,22 @@ class ActiveDocumentTest < Test::Unit::TestCase
         :email_address => 'stephen@thereport.com',
         :tags => [:conservative, :funny]
       )
+
+      @will = User.create(
+        :first_name => 'Will',
+        :last_name  => 'Smith',
+        :username   => 'legend',
+        :email_address => 'will@smith.com',
+        :tags => [:actor, :rapper]
+      )
     end
     
     should 'find_all_by_username' do
-      assert_equal ['helen', 'lefty', 'steve'], User.find_all_by_username.collect {|u| u.username}
+      assert_equal ['helen', 'lefty', 'legend', 'steve'], User.find_all_by_username.collect {|u| u.username}
     end
 
     should 'find_all_by_last_name_and_first_name' do
-      assert_equal ['steve', 'lefty', 'helen'], User.find_all_by_last_name_and_first_name.collect {|u| u.username}
+      assert_equal ['steve', 'legend', 'lefty', 'helen'], User.find_all_by_last_name_and_first_name.collect {|u| u.username}
     end
 
     should 'find_all_by_last_name' do
@@ -236,6 +270,46 @@ class ActiveDocumentTest < Test::Unit::TestCase
 
     should 'find_all_by_tag' do
       assert_equal ['lefty', 'steve'], User.find_all_by_tag(:funny).collect {|u| u.username}
+    end
+
+    should 'find with keys' do
+      assert_equal ['lefty', 'helen', 'legend'],
+        User.find_all_by_last_name("Stewart", "Smith").collect {|u| u.username}
+    end
+
+    should 'find with range' do
+      assert_equal ['legend', 'lefty', 'helen'],
+        User.find_all_by_last_name("Smith".."Stuart").collect {|u| u.username}
+    end
+
+    should 'find with range and key' do
+      assert_equal ['legend', 'lefty', 'helen', 'steve'],
+        User.find_all_by_last_name("Smith".."Stuart", "Colbert").collect {|u| u.username}
+    end
+
+    should 'find with ranges' do
+      assert_equal ['steve', 'legend', 'lefty', 'helen'],
+        User.find_all_by_last_name("Aardvark".."Daisy", "Smith".."Stuart").collect {|u| u.username}
+    end
+
+    should 'find with limit' do
+      assert_equal ["helen", "lefty"], User.find_all_by_username(:limit => 2).collect {|u| u.username}
+    end
+
+    should 'find with limit and offset' do
+      assert_equal ["legend", "steve"], User.find_all_by_username(:limit => 2, :offset => 2).collect {|u| u.username}
+    end
+
+    should 'find with page' do
+      assert_equal ["helen", "lefty"],  User.find_all_by_username(:per_page => 2, :page => 1).collect {|u| u.username}
+      assert_equal ["legend", "steve"], User.find_all_by_username(:per_page => 2, :page => 2).collect {|u| u.username}
+      assert_equal ["helen", "lefty"],  User.find_all_by_username(:limit => 2, :page => 1).collect {|u| u.username}
+      assert_equal ["legend", "steve"], User.find_all_by_username(:limit => 2, :page => 2).collect {|u| u.username}
+    end
+
+    should 'find with page_marker' do
+      assert_equal ["helen", "lefty"],  User.find_all_by_username(:limit => 2).collect {|u| u.username}
+      assert_equal ["legend", "steve"], User.find_all_by_username(:page => User.page_marker).collect {|u| u.username}
     end
   end
 end

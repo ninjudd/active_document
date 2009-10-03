@@ -36,7 +36,7 @@ relational Database, see (http://www.oracle.com/database/docs/Berkeley-DB-v-Rela
     :first_name => 'Martha',
     :last_name  => 'Stewart',
     :username   => 'helen',
-    :email_address => 'martha@marthastewart.com'
+    :email_address => 'martha@marthastewart.com',
     :tags => [:conservative, :convict]
   )
 
@@ -58,7 +58,47 @@ relational Database, see (http://www.oracle.com/database/docs/Berkeley-DB-v-Rela
   => ["John", "Martha"]
 
   User.find_all_by_tag(:funny).collect {|u| u.username}
-  => [
+  => ["lefty", "steve"]
+
+=== Complex finds:
+
+Any find can take multiple keys, a key range, or multiple key ranges.
+
+  User.create(
+    :first_name => 'Will',
+    :last_name  => 'Smith',
+    :username   => 'legend',
+    :email_address => 'will@smith.com',
+    :tags => [:actor, :rapper]
+  )
+
+  User.find_all_by_last_name("Stewart", "Smith").collect {|u| u.username}
+  => ["lefty", "helen", "legend"]
+
+  User.find_all_by_last_name("Smith".."Stuart").collect {|u| u.username}
+  => ["legend", "lefty", "helen"]
+
+  User.find_all_by_last_name("Smith".."Stuart", "Colbert").collect {|u| u.username}
+  => ["legend", "lefty", "helen", "steve"]
+
+  User.find_all_by_last_name("Aardvark".."Daisy", "Smith".."Stuart").collect {|u| u.username}
+  => ["steve", "legend", "lefty", "helen"]
+
+=== Limit and Offset:
+
+Any find can also take :limit, :offset, :page, and :per_page as options. These can be used for paginating large lists.
+
+  User.find_all_by_username(:limit => 2).collect {|u| u.username}
+  => ["helen", "lefty"]
+
+  User.find_all_by_username(:limit => 2, :offset => 2).collect {|u| u.username}
+  => ["legend", "steve"]
+
+  User.find_all_by_username(:per_page => 2, :page => 1).collect {|u| u.username}
+  => ["helen", "lefty"]
+
+  User.find_all_by_username(:per_page => 2, :page => 2).collect {|u| u.username}
+  => ["legend", "steve"]
 
 == Install:
 
