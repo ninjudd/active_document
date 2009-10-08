@@ -1,5 +1,6 @@
 class ActiveDocument::PartitionedDatabase
   SEPARATOR = '__'
+  PARTITION_PATTERN = /^[-\w]*$/
 
   def initialize(opts)
     @environment  = opts[:environment]
@@ -25,6 +26,8 @@ class ActiveDocument::PartitionedDatabase
   def database(partition)
     raise 'partition value required' if partition.nil?
     partition = partition.to_s
+    raise "invalid partition value: #{partition}" unless partition =~ PARTITION_PATTERN
+
     databases[partition] ||= begin
       database = environment.new_database(
         :model_class => model_class,
