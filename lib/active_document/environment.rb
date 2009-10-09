@@ -70,7 +70,7 @@ class ActiveDocument::Environment
     end
   rescue Bdb::DbError, ActiveDocument::Error => e
     e = ActiveDocument.wrap_error(e)
-    retry if parent.nil? and e.kind_of?(ActiveDocument::Deadlock)
+    retry if @transaction.nil? and e.kind_of?(ActiveDocument::Deadlock)
     raise e
   end
 
