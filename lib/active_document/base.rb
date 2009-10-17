@@ -41,6 +41,10 @@ class ActiveDocument::Base
     self.class.transaction(&block)
   end
 
+  def self.checkpoint(opts = {})
+    environment.txn_checkpoint(opts[:kbyte] || 0, opts[:min] || 0, opts[:force] ? Bdb::DB_FORCE : 0)
+  end
+
   def self.create(*args)
     model = new(*args)
     model.save
