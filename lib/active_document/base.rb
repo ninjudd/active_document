@@ -199,7 +199,7 @@ class ActiveDocument::Base
   def self.reader(*attrs)
     attrs.each do |attr|
       define_method(attr) do
-        attributes[attr]
+        read_attribute(attr)
       end
     end
   end
@@ -207,11 +207,11 @@ class ActiveDocument::Base
   def self.bool_reader(*attrs)
     attrs.each do |attr|
       define_method(attr) do
-        !!attributes[attr]
+        !!read_attribute(attr)
       end
 
       define_method("#{attr}?") do
-        !!attributes[attr]
+        !!read_attribute(attr)
       end
     end
   end
@@ -242,14 +242,9 @@ class ActiveDocument::Base
     end
   end
 
-  def initialize(attributes = {})
-    if attributes.kind_of?(String)
-      @attributes, @saved_attributes = Marshal.load(attributes)      
-    else
-      @attributes = attributes
-    end
-    @attributes       = HashWithIndifferentAccess.new(@attributes)       if @attributes
-    @saved_attributes = HashWithIndifferentAccess.new(@saved_attributes) if @saved_attributes
+  def initialize(attributes = {}, saved_attributes = nil)
+    @attributes       = HashWithIndifferentAccess.new(attributes)       if attributes
+    @saved_attributes = HashWithIndifferentAccess.new(saved_attributes) if saved_attributes
 
     if partition_by and partition.nil?
       set_method = "#{partition_by}="
@@ -261,6 +256,14 @@ class ActiveDocument::Base
 
   def attributes
     @attributes ||= Marshal.load(Marshal.dump(saved_attributes))
+  end
+
+  def read_attribute(attr)
+    if @attributes.nil?
+      saved_attributes[attr]
+    else
+      attributes[attr]
+    end
   end
 
   save_method :update_attributes
@@ -328,7 +331,7 @@ class ActiveDocument::Base
   end
 
   def self._load(data)
-    new(data)
+    new(*Marshal.load(data))
   end
 
 private
