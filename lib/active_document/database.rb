@@ -86,6 +86,7 @@ class ActiveDocument::Database
     db     = db(opts[:field])
     models = ResultSet.new(opts, &block)
     flags  = opts[:modify] ? Bdb::DB_RMW : 0
+    flags  = 0 if environment.disable_transactions?
 
     keys.each do |key|
       if opts[:partial] and not key.kind_of?(Range)
