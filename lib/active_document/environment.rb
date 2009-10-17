@@ -53,6 +53,7 @@ class ActiveDocument::Environment
   end
 
   def transaction(nested = true)
+    return yield if disable_transactions?
     return @transaction unless block_given?
 
     synchronize do
@@ -72,6 +73,10 @@ class ActiveDocument::Environment
     e = ActiveDocument.wrap_error(e)
     retry if @transaction.nil? and e.kind_of?(ActiveDocument::Deadlock)
     raise e
+  end
+
+  def disable_transactions?
+    config[:disable_transactions]
   end
 
   def synchronize
