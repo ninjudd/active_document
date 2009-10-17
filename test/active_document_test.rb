@@ -35,6 +35,31 @@ class User < ActiveDocument::Base
   index_by :tags, :multi_key => true
 end
 
+class View < ActiveDocument::Base
+  reader :profile_id, :user_id, :count
+  timestamps
+
+  primary_key [:profile_id, :user_id]
+  index_by [:user_id,    :updated_at]
+  index_by [:profile_id, :updated_at]
+  
+  save_method :increment
+  def increment
+    attributes[:count] += 1
+  end
+
+  def self.increment!(profile_id, user_id)
+#    transaction do
+      view = find_by_primary_key([profile_id, user_id]) #, :modify => true)
+      if view
+        view.increment!
+      else
+        view = create(:profile_id => profile_id, :user_id => user_id, :count => 1)
+      end
+#    end    
+  end
+end
+
 class ActiveDocumentTest < Test::Unit::TestCase
   context 'with empty foo db' do
     setup do
@@ -310,6 +335,25 @@ class ActiveDocumentTest < Test::Unit::TestCase
     should 'find with page_marker' do
       assert_equal ["helen", "lefty"],  User.find_all_by_username(:limit => 2).collect {|u| u.username}
       assert_equal ["legend", "steve"], User.find_all_by_username(:page => User.page_marker).collect {|u| u.username}
+    end
+  end
+
+  context 'with empty views db' do
+    setup do
+      View.database.truncate!
+    end
+
+    N = 10000
+    P = 1
+    U = 1
+
+    should 'increment views randomly without corrupting secondary index' do
+      N.times do
+        profile_id = rand(P)
+        user_id    = rand(U)
+        View.increment!(profile_id, user_id)
+      end
+      assert true
     end
   end
 end
