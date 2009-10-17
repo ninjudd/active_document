@@ -75,6 +75,10 @@ class ActiveDocument::Environment
     raise e
   end
 
+  def checkpoint(opts = {})
+    env.txn_checkpoint(opts[:kbyte] || 0, opts[:min] || 0, opts[:force] ? Bdb::DB_FORCE : 0)
+  end
+
   def disable_transactions?
     config[:disable_transactions]
   end

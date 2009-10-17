@@ -42,7 +42,7 @@ class ActiveDocument::Base
   end
 
   def self.checkpoint(opts = {})
-    environment.txn_checkpoint(opts[:kbyte] || 0, opts[:min] || 0, opts[:force] ? Bdb::DB_FORCE : 0)
+    environment.checkpoint(opts)
   end
 
   def self.create(*args)
