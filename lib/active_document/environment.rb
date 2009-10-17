@@ -53,8 +53,8 @@ class ActiveDocument::Environment
   end
 
   def transaction(nested = true)
-    return yield if disable_transactions?
     return @transaction unless block_given?
+    return yield if disable_transactions?
 
     synchronize do
       parent = @transaction
