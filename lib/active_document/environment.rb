@@ -23,8 +23,13 @@ class ActiveDocument::Environment
     if @env.nil?
       synchronize do
         @env = Bdb::Env.new(0)
-        env_flags = Bdb::DB_CREATE | Bdb::DB_INIT_TXN | Bdb::DB_INIT_LOCK | Bdb::DB_INIT_LOG |
-                    Bdb::DB_REGISTER | Bdb::DB_RECOVER | Bdb::DB_INIT_MPOOL
+        if disable_transactions?
+          env_flags = Bdb::DB_CREATE | Bdb::DB_INIT_LOG | Bdb::DB_INIT_MPOOL
+        else
+          env_flags = Bdb::DB_CREATE | Bdb::DB_INIT_TXN | Bdb::DB_INIT_LOCK |
+                      Bdb::DB_REGISTER | Bdb::DB_RECOVER | Bdb::DB_INIT_MPOOL
+        end
+
         @env.cachesize = config[:cache_size] if config[:cache_size]
         @env.set_timeout(config[:txn_timeout],  Bdb::DB_SET_TXN_TIMEOUT)  if config[:txn_timeout]
         @env.set_timeout(config[:lock_timeout], Bdb::DB_SET_LOCK_TIMEOUT) if config[:lock_timeout]
