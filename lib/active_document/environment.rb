@@ -24,7 +24,7 @@ class ActiveDocument::Environment
       synchronize do
         @env = Bdb::Env.new(0)
         if disable_transactions?
-          env_flags = Bdb::DB_CREATE | Bdb::DB_INIT_LOG | Bdb::DB_INIT_MPOOL
+          env_flags = Bdb::DB_CREATE | Bdb::DB_INIT_MPOOL
         else
           env_flags = Bdb::DB_CREATE | Bdb::DB_INIT_TXN | Bdb::DB_INIT_LOCK |
                       Bdb::DB_REGISTER | Bdb::DB_RECOVER | Bdb::DB_INIT_MPOOL
