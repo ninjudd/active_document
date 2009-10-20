@@ -226,7 +226,9 @@ private
       @models = []
       @count  = 0
       @limit  = opts[:limit] || opts[:per_page]
+      @limit  = @limit.to_i if @limit
       @offset = opts[:offset] || (opts[:page] ? @limit * (opts[:page] - 1) : 0)
+      @offset = @offset.to_i if @offset
       @page_offset = 0
     end
     attr_reader :count, :limit, :offset, :page_key, :page_offset, :field
