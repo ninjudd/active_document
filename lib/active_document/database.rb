@@ -27,10 +27,10 @@ class ActiveDocument::Database
     if @db.nil?
       @db = {}
       transaction(false) do
-        db = env.db
-        db.pagesize = config[:page_size] if config[:page_size]
-        db.open(transaction, name, nil, Bdb::Db::BTREE, Bdb::DB_CREATE, 0)
-        @db[:primary_key] = db
+        primary_db = env.db
+        primary_db.pagesize = config[:page_size] if config[:page_size]
+        primary_db.open(transaction, name, nil, Bdb::Db::BTREE, Bdb::DB_CREATE, 0)
+        @db[:primary_key] = primary_db
 
         indexes.each do |field, opts|
           index_callback = lambda do |db, key, data|
@@ -48,7 +48,7 @@ class ActiveDocument::Database
           index_db.flags = Bdb::DB_DUPSORT unless opts[:unique]
           index_db.pagesize = config[:page_size] if config[:page_size]
           index_db.open(transaction, "#{name}_by_#{field}", nil, Bdb::Db::BTREE, Bdb::DB_CREATE, 0)
-          db.associate(transaction, index_db, Bdb::DB_CREATE, index_callback)
+          primary_db.associate(transaction, index_db, Bdb::DB_CREATE, index_callback)
           @db[field] = index_db
         end
       end
