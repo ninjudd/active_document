@@ -76,6 +76,13 @@ class ActiveDocument::Database
     environment.synchronize(&block)
   end
 
+  def count(field, key)
+    with_cursor(db(field)) do |cursor|
+      k, v = cursor.get(Tuple.dump(key), nil, Bdb::DB_SET)
+      k ? cursor.count : 0
+    end
+  end
+
   def find(keys, opts = {}, &block)
     if opts[:page].is_a?(Array)
       raise 'page markers not supported with multiple keys' if keys.size != 1
@@ -109,7 +116,7 @@ class ActiveDocument::Database
           end
 
           while k
-            models << Marshal.load(v)
+            models << unmarshal(v, :tuple => k)
             k,v = iter.call
           end
         end
@@ -137,7 +144,7 @@ class ActiveDocument::Database
           end
           
           while k and cond.call(k)
-            models << Marshal.load(v)
+            models << unmarshal(v, :tuple => k)
             k,v = iter.call
           end
         end
@@ -146,14 +153,14 @@ class ActiveDocument::Database
           synchronize do
             # There can only be one item for each key.
             data = db.get(transaction, Tuple.dump(key), nil, flags)
-            models << Marshal.load(data) if data
+            models << unmarshal(data, :key => key) if data
           end
         else
           # Have to use a cursor because there may be multiple items with each key.
           with_cursor(db) do |cursor|
             k,v = cursor.get(Tuple.dump(key), nil, Bdb::DB_SET | flags)
             while k
-              models << Marshal.load(v)
+              models << unmarshal(v, :tuple => k)
               k,v = cursor.get(nil, nil, Bdb::DB_NEXT_DUP | flags)
             end
           end
@@ -205,7 +212,13 @@ class ActiveDocument::Database
   end
 
 private
-  
+
+  def unmarshal(value, opts = {})
+    model = Marshal.load(value)
+    model.locator_key = opts[:tuple] ? Tuple.load(opts[:tuple]) : [*opts[:key]]
+    model
+  end
+
   def with_cursor(db)
     synchronize do
       begin

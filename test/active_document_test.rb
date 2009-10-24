@@ -17,6 +17,7 @@ class Bar < ActiveDocument::Base
 
   primary_key [:foo, :bar]
   index_by :bar
+  index_by :foo
 end
 
 class Baz < ActiveDocument::Base
@@ -28,6 +29,7 @@ end
 
 class User < ActiveDocument::Base
   accessor :first_name, :last_name, :username, :email_address, :tags
+  timestamps
 
   primary_key :username
   index_by [:last_name, :first_name]
@@ -49,14 +51,14 @@ class View < ActiveDocument::Base
   end
 
   def self.increment!(profile_id, user_id)
-#    transaction do
+    transaction do
       view = find_by_primary_key([profile_id, user_id]) #, :modify => true)
       if view
         view.increment!
       else
         view = create(:profile_id => profile_id, :user_id => user_id, :count => 1)
       end
-#    end    
+    end    
   end
 end
 
@@ -180,6 +182,27 @@ class ActiveDocumentTest < Test::Unit::TestCase
       assert_equal nil, Foo.page_key
       assert_equal nil, Foo.page_offset
     end
+
+    should 'add locator_key to models' do
+      Foo.new(:id => 1, :foo => [1, 2, 3]).save
+      Foo.new(:id => 2, :foo => [4, 5, 6]).save
+      Foo.new(:id => 3, :foo => [6, 7, 8]).save
+
+      Foo.find_all_by_foo(2..4).each_with_index do |foo, i|
+        assert_equal [i + 2], foo.locator_key
+      end
+
+      Foo.find_all_by_foo(6).each do |foo|
+        assert_equal [6], foo.locator_key
+      end
+
+      i = 1
+      Foo.find_all_by_foo.each do |foo|
+        key = i > 6 ? [i - 1] : [i]
+        assert_equal key, foo.locator_key
+        i += 1
+      end
+    end
   end
 
   context 'with empty bar db' do
@@ -209,6 +232,21 @@ class ActiveDocumentTest < Test::Unit::TestCase
       assert_equal [52, 52], Bar.find_by_foo_and_bar([52, 52]).foo_and_bar
       assert_equal (0..99).collect {|i| [42, i]}, Bar.find_all_by_foo(42).collect {|b| b.primary_key}
       assert_equal (0..99).collect {|i| [i, 52]}, Bar.find_all_by_bar(52).collect {|b| b.primary_key}
+    end
+
+    should 'count' do
+      (1..21).each do |i|
+        Bar.new(:foo => i % 7, :bar => i % 3).save
+      end
+      
+      assert_equal 1, Bar.count(:primary_key, [6,2])
+      assert_equal 0, Bar.count(:primary_key, [2,6])
+
+      3.times {|i| assert_equal 7, Bar.count(:bar, i)}
+      assert_equal 0, Bar.count(:bar, 3)
+
+      7.times {|i| assert_equal 3, Bar.count(:foo, i)}
+      assert_equal 0, Bar.count(:foo, 7)
     end
   end
 
@@ -264,7 +302,7 @@ class ActiveDocumentTest < Test::Unit::TestCase
         :tags => [:conservative, :convict]
       )
 
-      @martha = User.create(
+      @steve = User.create(
         :first_name => 'Stephen',
         :last_name  => 'Colbert',
         :username   => 'steve',
@@ -335,6 +373,16 @@ class ActiveDocumentTest < Test::Unit::TestCase
     should 'find with page_marker' do
       assert_equal ["helen", "lefty"],  User.find_all_by_username(:limit => 2).collect {|u| u.username}
       assert_equal ["legend", "steve"], User.find_all_by_username(:page => User.page_marker).collect {|u| u.username}
+    end
+
+    should "mark deleted but don't destroy record" do
+      assert !@martha.deleted?
+      assert !User.find_by_username('helen').deleted?
+
+      @martha.delete!
+
+      assert @martha.deleted?
+      assert User.find_by_username('helen').deleted?
     end
   end
 

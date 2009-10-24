@@ -136,6 +136,10 @@ class ActiveDocument::Base
     doc
   end
   
+  def self.count(field, key)
+    database.count(field, key)
+  end
+
   class << self
     attr_reader :page_key, :page_offset
 
@@ -197,7 +201,7 @@ class ActiveDocument::Base
   end
 
   def self.timestamps
-    reader(:created_at, :updated_at)
+    reader(:created_at, :updated_at, :deleted_at)
   end
 
   def self.reader(*attrs)
@@ -257,6 +261,7 @@ class ActiveDocument::Base
   end
 
   attr_reader :saved_attributes
+  attr_accessor :locator_key
 
   def attributes
     @attributes ||= Marshal.load(Marshal.dump(saved_attributes))
@@ -326,6 +331,22 @@ class ActiveDocument::Base
 
   def destroy
     database.delete(self)
+  end
+
+  save_method :delete
+  def delete
+    raise 'cannot delete a record without deleted_at attribute' unless respond_to?(:deleted_at)
+    saved_attributes[:deleted_at] = Time.now
+  end
+
+  save_method :undelete
+  def undelete
+    raise 'cannot undelete a record without deleted_at attribute' unless respond_to?(:deleted_at)
+    saved_attributes.delete(:deleted_at)
+  end
+
+  def deleted?
+    respond_to?(:deleted_at) and not deleted_at.nil?
   end
 
   def _dump(ignored)
