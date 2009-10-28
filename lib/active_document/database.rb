@@ -96,7 +96,7 @@ class ActiveDocument::Database
     flags  = 0 if environment.disable_transactions?
 
     keys.each do |key|
-      if opts[:partial] and not key.kind_of?(Range)
+      if opts[:partial] and not key.kind_of?(Range) and not key == :all
         first = [*key]
         last  = first + [true]
         key   = first..last
@@ -168,10 +168,10 @@ class ActiveDocument::Database
       end
     end
     model_class.set_page_marker
-    models.to_a
+    models.results
   rescue ResultSet::LimitReached
     model_class.set_page_marker(models.page_key, models.page_offset)
-    models.to_a
+    models.results
   rescue Bdb::DbError => e
     e = ActiveDocument.wrap_error(e)
     retry if transaction.nil? and e.kind_of?(ActiveDocument::Deadlock)
@@ -236,19 +236,21 @@ private
     def initialize(opts, &block)
       @block  = block
       @field  = opts[:field] || :primary_key
-      @models = []
       @count  = 0
       @limit  = opts[:limit] || opts[:per_page]
       @limit  = @limit.to_i if @limit
       @offset = opts[:offset] || (opts[:page] ? @limit * (opts[:page] - 1) : 0)
       @offset = @offset.to_i if @offset
       @page_offset = 0
-    end
-    attr_reader :count, :limit, :offset, :page_key, :page_offset, :field
 
-    def to_a
-      @models.dup
+      if @group = opts[:group]
+        raise 'block not supported with group' if @block     
+        @results = ActiveSupport::OrderedHash.new
+      else
+        @results = []
+      end
     end
+    attr_reader :field, :count, :group, :limit, :offset, :page_key, :page_offset, :results
 
     def <<(model)
       @count += 1
@@ -265,7 +267,14 @@ private
         raise LimitReached if count > limit + offset
       end
 
-      @block ? @block.call(model) : @models << model
+      if group
+        group_key = group.is_a?(Fixnum) ? model.locator_key[0,group] : model.locator_key
+        (results[group_key] ||= []) << model
+      elsif @block
+        @block.call(model)
+      else
+        results << model
+      end
     end
   end
 end

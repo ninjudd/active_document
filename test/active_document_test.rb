@@ -30,6 +30,7 @@ end
 class User < ActiveDocument::Base
   accessor :first_name, :last_name, :username, :email_address, :tags
   timestamps
+  defaults :tags => []
 
   primary_key :username
   index_by [:last_name, :first_name]
@@ -319,6 +320,11 @@ class ActiveDocumentTest < Test::Unit::TestCase
       )
     end
     
+    should 'initialize defaults' do
+      user = User.create
+      assert_equal [], user.tags
+    end
+
     should 'find_all_by_username' do
       assert_equal ['helen', 'lefty', 'legend', 'steve'], User.find_all_by_username.collect {|u| u.username}
     end
@@ -329,6 +335,7 @@ class ActiveDocumentTest < Test::Unit::TestCase
 
     should 'find_all_by_last_name' do
       assert_equal ['John', 'Martha'], User.find_all_by_last_name('Stewart').collect {|u| u.first_name}
+      assert_equal ['Stephen', 'Will', 'John', 'Martha'], User.find_all_by_last_name.collect {|u| u.first_name}
     end
 
     should 'find_all_by_tag' do
@@ -361,6 +368,22 @@ class ActiveDocumentTest < Test::Unit::TestCase
 
     should 'find with limit and offset' do
       assert_equal ["legend", "steve"], User.find_all_by_username(:limit => 2, :offset => 2).collect {|u| u.username}
+    end
+
+    should 'find with group' do
+      expected = [[["Colbert", "Stephen"], 1],
+                  [["Smith", "Will"],      1],
+                  [["Stewart", "John"],    1],
+                  [["Stewart", "Martha"],  1]]
+
+      assert_equal expected, User.find_all_by_last_name(:all, :group => true).collect {|k,v| [k,v.size]}
+      assert_equal expected, User.find_all_by_last_name(:all, :group => 2   ).collect {|k,v| [k,v.size]}
+
+      expected = [[["Colbert"], 1],
+                  [["Smith"],   1],
+                  [["Stewart"], 2]]
+
+      assert_equal expected, User.find_all_by_last_name(:all, :group => 1   ).collect {|k,v| [k,v.size]}
     end
 
     should 'find with page' do

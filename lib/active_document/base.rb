@@ -204,6 +204,15 @@ class ActiveDocument::Base
     reader(:created_at, :updated_at, :deleted_at)
   end
 
+  def self.defaults(defaults = {})
+    @defaults ||= {}
+    @defaults.merge!(defaults)
+  end
+
+  def self.default(attr, default)
+    defaults[attr] = default
+  end
+
   def self.reader(*attrs)
     attrs.each do |attr|
       define_method(attr) do
@@ -254,6 +263,15 @@ class ActiveDocument::Base
     @attributes       = HashWithIndifferentAccess.new(attributes)       if attributes
     @saved_attributes = HashWithIndifferentAccess.new(saved_attributes) if saved_attributes
 
+    # Initialize defaults if this is a new record.
+    if @saved_attributes.nil?
+      self.class.defaults.each do |attr, default|
+        next if @attributes.has_key?(attr)
+        @attributes[attr] = default.is_a?(Proc) ? default.bind(self).call : default.dup
+      end
+    end
+
+    # Set the partition field in case we are in a with_partition block.
     if partition_by and partition.nil?
       set_method = "#{partition_by}="
       self.send(set_method, database.partition) if respond_to?(set_method)
