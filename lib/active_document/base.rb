@@ -327,6 +327,22 @@ class ActiveDocument::Base
     raise 'no saved attributes for new record' if new_record?
     @saved ||= self.class.new(saved_attributes)
   end
+  
+  def clone
+    cloned_attributes = Marshal.load(Marshal.dump(attributes))
+    uncloned_fields.each do |attr|
+      cloned_attributes.delete(attr)
+    end
+    self.class.new(cloned_attributes)
+  end
+
+  def self.uncloned_fields(*attrs)
+    if attrs.empty?
+      @uncloned_fields ||= [:created_at, :updated_at, :deleted_at]
+    else
+      uncloned_fields.concat(attrs)
+    end
+  end
 
   def save
     time = Time.now
