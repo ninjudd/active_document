@@ -253,9 +253,11 @@ class ActiveDocument::Base
   
   def self.save_method(method_name)
     define_method("#{method_name}!") do |*args|
-      value = send(method_name, *args)
-      save
-      value
+      transaction do 
+        value = send(method_name, *args)
+        save
+        value
+      end
     end
   end
 
@@ -328,11 +330,12 @@ class ActiveDocument::Base
     @saved ||= self.class.new(saved_attributes)
   end
   
-  def clone
+  def clone(changed_attributes = {})
     cloned_attributes = Marshal.load(Marshal.dump(attributes))
     uncloned_fields.each do |attr|
       cloned_attributes.delete(attr)
     end
+    cloned_attributes.merge!(changed_attributes)
     self.class.new(cloned_attributes)
   end
 
@@ -344,10 +347,10 @@ class ActiveDocument::Base
     end
   end
 
-  def save
-    time = Time.now
-    attributes[:updated_at] = time if respond_to?(:updated_at)
-    attributes[:created_at] = time if respond_to?(:created_at) and new_record?
+  def save(opts = {})
+    time = opts[:updated_at] || Time.now
+    attributes[:updated_at] = time   if respond_to?(:updated_at)
+    attributes[:created_at] ||= time if respond_to?(:created_at) and new_record?
 
     opts = {}
     if changed?(:primary_key) or (partition_by and changed?(partition_by))
