@@ -1,8 +1,8 @@
 require File.dirname(__FILE__) + '/test_helper'
 
-ActiveDocument.default_path = File.dirname(__FILE__) + '/tmp'
-FileUtils.rmtree ActiveDocument.default_path
-FileUtils.mkdir  ActiveDocument.default_path
+ActiveDocument::Base.path = File.dirname(__FILE__) + '/tmp'
+FileUtils.rmtree ActiveDocument::Base.path
+FileUtils.mkdir  ActiveDocument::Base.path
 
 class Foo < ActiveDocument::Base
   accessor :foo, :bar, :id
@@ -165,23 +165,15 @@ class ActiveDocumentTest < Test::Unit::TestCase
 
       assert_equal [5, 5, 5, 5, 6, 6, 6],
         Foo.find_all_by_foo(5..14, :limit => 7, :offset => 1).collect {|f| f.foo}
-      assert_equal 6, Foo.page_key
-      assert_equal 3, Foo.page_offset
 
       assert_equal [6, 6, 7, 7, 7, 7, 7, 8, 8, 8, 8],
-        Foo.find_all_by_foo(Foo.page_key..14, :limit => 11, :offset => Foo.page_offset).collect {|f| f.foo}
-      assert_equal 8, Foo.page_key
-      assert_equal 4, Foo.page_offset
+        Foo.find_all_by_foo(6..14, :limit => 11, :offset => 3).collect {|f| f.foo}
 
       assert_equal [8, 9, 9, 9, 9, 9, 10, 10, 10, 10, 10, 11, 11, 11, 11, 11],
-        Foo.find_all_by_foo(Foo.page_key..14, :limit => 16, :offset => Foo.page_offset).collect {|f| f.foo}
-      assert_equal 12, Foo.page_key
-      assert_equal 0,  Foo.page_offset
+        Foo.find_all_by_foo(8..14, :limit => 16, :offset => 4).collect {|f| f.foo}
 
       assert_equal [12, 12, 12, 12, 12, 13, 13, 13, 13, 13, 14, 14, 14, 14, 14],
-        Foo.find_all_by_foo(Foo.page_key..14, :offset => Foo.page_offset).collect {|f| f.foo}
-      assert_equal nil, Foo.page_key
-      assert_equal nil, Foo.page_offset
+        Foo.find_all_by_foo(12..14, :offset => 0).collect {|f| f.foo}
     end
 
     should 'add locator_key to models' do
@@ -391,11 +383,6 @@ class ActiveDocumentTest < Test::Unit::TestCase
       assert_equal ["legend", "steve"], User.find_all_by_username(:per_page => 2, :page => 2).collect {|u| u.username}
       assert_equal ["helen", "lefty"],  User.find_all_by_username(:limit => 2, :page => 1).collect {|u| u.username}
       assert_equal ["legend", "steve"], User.find_all_by_username(:limit => 2, :page => 2).collect {|u| u.username}
-    end
-
-    should 'find with page_marker' do
-      assert_equal ["helen", "lefty"],  User.find_all_by_username(:limit => 2).collect {|u| u.username}
-      assert_equal ["legend", "steve"], User.find_all_by_username(:page => User.page_marker).collect {|u| u.username}
     end
 
     should "mark deleted but don't destroy record" do

@@ -4,10 +4,8 @@ class ActiveDocument::Base
     @path ||= (self == ActiveDocument::Base ? nil : ActiveDocument::Base.path)
   end
 
-  def self.db_config(config = {})
-    @db_config ||= {}
-    @db_config.merge!(config)
-    ActiveDocument.db_config.merge(@db_config)
+  def self.path=(path)
+    @path = path
   end
 
   def self.database_name(database_name = nil)
@@ -18,11 +16,6 @@ class ActiveDocument::Base
       return if self == ActiveDocument::Base 
       @database_name ||= name.underscore.gsub('/', '-').pluralize
     end
-  end
-
-  @@environment = {}
-  def self.environment
-    @@environment[path] ||= ActiveDocument::Environment.new(path)
   end
 
   def self.database
@@ -42,7 +35,7 @@ class ActiveDocument::Base
   end
 
   def self.checkpoint(opts = {})
-    environment.checkpoint(opts)
+    database.checkpoint(opts)
   end
 
   def self.create(*args)
@@ -55,18 +48,14 @@ class ActiveDocument::Base
     raise 'primary key already defined' if @database
 
     if @partition_by = opts[:partition_by]
-      @database = ActiveDocument::PartitionedDatabase.new(
-        :model_class  => self,
-        :environment  => environment,
-        :partition_by => @partition_by
-      )
+      @database = Bdb::PartitionedDatabase.new(database_name, :path  => path, :partition_by => @partition_by)
       (class << self; self; end).instance_eval do
         alias_method opts[:partition_by].to_s.pluralize, :partitions
         alias_method "with_#{opts[:partition_by]}", :with_partition
         alias_method "with_each_#{opts[:partition_by]}", :with_each_partition
       end
     else
-      @database = environment.new_database(:model_class => self)
+      @database = Bdb::Database.new(database_name, :path => path)
     end
 
     field = define_field_accessor(field_or_fields)
@@ -123,34 +112,22 @@ class ActiveDocument::Base
     environment.close
   end
 
-  def self.find_by(field, *keys)
-    opts = extract_opts(keys)
+  def self.find_by(field, *args)
+    opts = extract_opts(args)
     opts[:field] = field
-    keys << :all if keys.empty?
-    database.find(keys, opts)
+    args << :all if args.empty?
+    args << opts
+    database.get(*args)
   end
 
   def self.find(key, opts = {})
-    doc = database.find([key], opts).first
+    doc = database.get(key, opts).first
     raise ActiveDocument::DocumentNotFound, "Couldn't find #{name} with id #{key.inspect}" unless doc
     doc
   end
   
   def self.count(field, key)
     database.count(field, key)
-  end
-
-  class << self
-    attr_reader :page_key, :page_offset
-
-    def set_page_marker(key = nil, offset = nil)
-      @page_key    = key
-      @page_offset = offset
-    end
-
-    def page_marker
-      [page_key, page_offset]
-    end
   end
 
   def self.define_field_accessor(field_or_fields, field = nil)    
@@ -281,7 +258,7 @@ class ActiveDocument::Base
   end
 
   attr_reader :saved_attributes
-  attr_accessor :locator_key
+  alias locator_key bdb_locator_key
 
   def attributes
     @attributes ||= Marshal.load(Marshal.dump(saved_attributes))
@@ -363,11 +340,14 @@ class ActiveDocument::Base
     @saved_attributes = attributes
     @attributes       = nil
     @saved            = nil
-    database.save(self, opts)
+    database.set(primary_key, self, opts)
+  rescue Bdb::DbError => e
+    raise(ActiveDocument::DuplicatePrimaryKey, e) if e.code == Bdb::DB_KEYEXIST
+    raise(e)
   end
 
   def destroy
-    database.delete(self)
+    database.delete(primary_key)
   end
 
   save_method :delete
