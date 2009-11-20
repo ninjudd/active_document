@@ -9,7 +9,7 @@ Gem::Specification.new do |s|
 
   s.required_rubygems_version = Gem::Requirement.new(">= 0") if s.respond_to? :required_rubygems_version=
   s.authors = ["Justin Balthrop"]
-  s.date = %q{2009-11-19}
+  s.date = %q{2009-11-20}
   s.description = %q{Schemaless models in Berkeley DB.}
   s.email = %q{code@justinbalthrop.com}
   s.extra_rdoc_files = [
@@ -50,8 +50,11 @@ Gem::Specification.new do |s|
     s.specification_version = 3
 
     if Gem::Version.new(Gem::RubyGemsVersion) >= Gem::Version.new('1.2.0') then
+      s.add_runtime_dependency(%q<bdb>, ["= 0.1.0"])
     else
+      s.add_dependency(%q<bdb>, ["= 0.1.0"])
     end
   else
+    s.add_dependency(%q<bdb>, ["= 0.1.0"])
   end
 end
