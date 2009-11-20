@@ -102,9 +102,13 @@ Any find can also take :limit, :offset, :page, and :per_page as options. These c
 
 == Install:
 
-  sudo gem install ninjudd-bdb -s http://gems.github.com
-  sudo gem install ninjudd-tuple -s http://gems.github.com
-  sudo gem install ninjudd-active_document -s http://gems.github.com
+  sudo gem install active_document -s http://gemcutter.org
+
+== Dependencies:
+
+* {Berkeley DB 4.8}[http://www.oracle.com/technology/software/products/berkeley-db/db/index.html]
+* {bdb}[http://github.com/ninjudd/bdb]
+* {tuple}[http://github.com/ninjudd/tuple]
 
 == License:
 
