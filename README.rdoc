@@ -106,7 +106,7 @@ Any find can also take :limit, :offset, :page, and :per_page as options. These c
 
 == Dependencies:
 
-* {berkeley-db (> 4.8 recommended)}[http://www.oracle.com/technology/software/products/berkeley-db/db/index.html]
+* {berkeley-db}[http://www.oracle.com/technology/software/products/berkeley-db/db/index.html] (> 4.8 recommended)
 * {bdb}[http://github.com/ninjudd/bdb]
 * {tuple}[http://github.com/ninjudd/tuple]
 
