@@ -6,10 +6,10 @@ begin
   require 'jeweler'
   Jeweler::Tasks.new do |s|
     s.name = "active_document"
-    s.summary = %Q{TODO}
-    s.email = "justin@geni.com"
+    s.summary = %Q{Schemaless models in Berkeley DB}
+    s.email = "code@justinbalthrop.com"
     s.homepage = "http://github.com/ninjudd/active_document"
-    s.description = "TODO"
+    s.description = "Schemaless models in Berkeley DB."
     s.authors = ["Justin Balthrop"]
   end
 rescue LoadError
