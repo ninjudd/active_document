@@ -11,9 +11,11 @@ begin
     s.homepage = "http://github.com/ninjudd/active_document"
     s.description = "Schemaless models in Berkeley DB."
     s.authors = ["Justin Balthrop"]
-    s.add_dependency('bdb',   '= 0.1.0')
+    s.add_dependency('bdb', '= 0.1.0')
     s.add_dependency('tuple', '= 0.1.1')
+    s.add_dependency('activesupport', '>= 2.0.0')
   end
+  Jeweler::GemcutterTasks.new
 rescue LoadError
   puts "Jeweler not available. Install it with: sudo gem install technicalpickles-jeweler -s http://gems.github.com"
 end
