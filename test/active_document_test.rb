@@ -1,6 +1,6 @@
 require File.dirname(__FILE__) + '/test_helper'
 
-ActiveDocument::Base.path = File.dirname(__FILE__) + '/tmp'
+ActiveDocument::Base.path = '/tmp/active_document_test'
 FileUtils.rmtree ActiveDocument::Base.path
 FileUtils.mkdir  ActiveDocument::Base.path
 
